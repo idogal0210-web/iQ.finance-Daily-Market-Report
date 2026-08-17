@@ -176,7 +176,12 @@ def fetch_companies(fmp_key: str) -> dict:
     return out
 
 
-def fetch_headlines(news_key: str, max_articles: int = 12) -> list[str]:
+def fetch_headlines(max_articles: int = 12) -> list[str]:
+    """Fetch headlines from NewsAPI — optional, skipped gracefully if key missing."""
+    news_key = os.environ.get("NEWS_API_KEY", "")
+    if not news_key:
+        print("  [INFO] NEWS_API_KEY לא הוגדר — מדלג על כותרות חדשות")
+        return []
     yesterday = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
     params = {
         "q": (
@@ -206,8 +211,7 @@ def fetch_headlines(news_key: str, max_articles: int = 12) -> list[str]:
 
 # ── Main entry ─────────────────────────────────────────────────────────────────
 def collect_all_market_data() -> dict:
-    fmp_key  = os.environ["FMP_API_KEY"]
-    news_key = os.environ["NEWS_API_KEY"]
+    fmp_key = os.environ["FMP_API_KEY"]
 
     print("  📈 מדדים (FMP + yfinance)...")
     indices = fetch_indices(fmp_key)
@@ -218,8 +222,8 @@ def collect_all_market_data() -> dict:
     print("  🏢 מניות חברות (FMP + yfinance)...")
     companies = fetch_companies(fmp_key)
 
-    print("  📰 כותרות חדשות (NewsAPI)...")
-    headlines = fetch_headlines(news_key)
+    print("  📰 כותרות חדשות (NewsAPI — אופציונלי)...")
+    headlines = fetch_headlines()
 
     return {
         "date":        datetime.now().strftime("%d/%m/%Y"),
