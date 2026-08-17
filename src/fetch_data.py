@@ -1,87 +1,168 @@
 """
-fetch_data.py
-=============
-אוסף נתוני שוק בזמן אמת:
-  - yfinance  → מחירי סחורות ושינויים
-  - NewsAPI   → כותרות שוק אחרונות (אנגלית)
-  - Gemini AI → TL;DR בעברית (3 נקודות)
+fetch_data.py — v2
+==================
+אוסף נתוני שוק מקיפים:
+  • מדדים:  S&P 500, נאסד"ק, ת"א-125
+  • סחורות: נפט, גז, זהב, נחושת, חיטה, ICL
+  • 10 חברות מפתח
+  • כותרות חדשות (NewsAPI)
 """
 
 import os
 import yfinance as yf
 import requests
-import google.generativeai as genai
 from datetime import datetime, timedelta
 
+UNVERIFIED = "⚪ לא אומת"
 
-# ─── Tickers ──────────────────────────────────────────────────────────────────
-COMMODITIES = {
-    "wti":      {"ticker": "CL=F",  "label": "WTI Crude",   "sector": "energy"},
-    "brent":    {"ticker": "BZ=F",  "label": "Brent Crude",  "sector": "energy"},
-    "nat_gas":  {"ticker": "NG=F",  "label": "Natural Gas",  "sector": "energy"},
-    "gold":     {"ticker": "GC=F",  "label": "Gold",         "sector": "metals"},
-    "nickel":   {"ticker": "NI=F",  "label": "Nickel",       "sector": "metals"},
-    "wheat":    {"ticker": "ZW=F",  "label": "Wheat",        "sector": "agri"},
-    "potash":   {"ticker": "ICL",   "label": "ICL (אשלגן)", "sector": "agri"},
+# ── Commodity tickers ──────────────────────────────────────────────────────────
+COMMODITIES_META = {
+    "wti":     {"ticker": "CL=F",  "label": "WTI",                  "unit": "$/bbl",    "sector": "energy"},
+    "brent":   {"ticker": "BZ=F",  "label": "Brent",                 "unit": "$/bbl",    "sector": "energy"},
+    "nat_gas": {"ticker": "NG=F",  "label": "גז טבעי (Henry Hub)",   "unit": "$/MMBtu",  "sector": "energy"},
+    "gold":    {"ticker": "GC=F",  "label": "זהב",                   "unit": "$/אונקיה", "sector": "metals"},
+    "copper":  {"ticker": "HG=F",  "label": "נחושת (COMEX)",         "unit": "$/lb",     "sector": "metals"},
+    "wheat":   {"ticker": "ZW=F",  "label": "חיטה",                  "unit": "cents/bu", "sector": "agri"},
+    "potash":  {"ticker": "ICL",   "label": "ICL (אשלגן proxy)",     "unit": "$",        "sector": "agri"},
 }
 
-UNVERIFIED_LABEL = "⚪ לא אומת"
+# ── Index tickers ──────────────────────────────────────────────────────────────
+INDICES_META = {
+    "sp500":  {"ticker": "^GSPC",     "label": "S&P 500",   "country": "us"},
+    "nasdaq": {"ticker": "^IXIC",     "label": 'נאסד"ק',    "country": "us"},
+    "ta125":  {"ticker": "^TA125.TA", "label": 'ת"א-125',   "country": "il"},
+}
+
+# ── Company tickers ────────────────────────────────────────────────────────────
+COMPANIES_META = {
+    "nvda":  {"ticker": "NVDA",  "label": "Nvidia",            "sector": "tech",     "country": "us"},
+    "vst":   {"ticker": "VST",   "label": "Vistra",            "sector": "energy",   "country": "us"},
+    "lmt":   {"ticker": "LMT",   "label": "Lockheed Martin",   "sector": "defense",  "country": "us"},
+    "dal":   {"ticker": "DAL",   "label": "Delta Air Lines",   "sector": "airlines", "country": "us"},
+    "fro":   {"ticker": "FRO",   "label": "Frontline",         "sector": "tankers",  "country": "us"},
+    "fang":  {"ticker": "FANG",  "label": "Diamondback Energy","sector": "energy",   "country": "us"},
+    "fcx":   {"ticker": "FCX",   "label": "Freeport-McMoRan",  "sector": "mining",   "country": "us"},
+    "scco":  {"ticker": "SCCO",  "label": "Southern Copper",   "sector": "mining",   "country": "us"},
+    "eslt":  {"ticker": "ESLT",  "label": "אלביט מערכות",     "sector": "defense",  "country": "il"},
+    "icl":   {"ticker": "ICL",   "label": "ICL Group",         "sector": "agri",     "country": "il"},
+}
 
 
-# ─── Commodities ──────────────────────────────────────────────────────────────
+# ── Generic fetch ──────────────────────────────────────────────────────────────
+def _fetch_one(ticker_sym: str) -> dict | None:
+    """
+    Fetches close price + daily % change for any ticker.
+    Uses 5-day window to survive weekends and market holidays.
+    Returns None on any failure.
+    """
+    try:
+        t = yf.Ticker(ticker_sym)
+        hist = t.history(period="5d")
+        hist = hist.dropna(subset=["Close"])
+        if hist.empty:
+            raise ValueError("empty")
+
+        close = float(hist["Close"].iloc[-1])
+        if len(hist) >= 2:
+            prev = float(hist["Close"].iloc[-2])
+            pct = ((close - prev) / prev) * 100
+            direction = "up" if pct > 0.05 else ("down" if pct < -0.05 else "flat")
+            change_str = f"{pct:+.2f}%"
+        else:
+            direction = "flat"
+            change_str = "0.00%"
+
+        return {"price_raw": close, "change": change_str, "direction": direction}
+    except Exception as e:
+        print(f"  [WARN] {ticker_sym}: {e}")
+        return None
+
+
+def _fmt(price: float) -> str:
+    """Human-readable price formatting."""
+    if price >= 10_000:
+        return f"{price:,.0f}"
+    elif price >= 1_000:
+        return f"{price:,.2f}"
+    elif price >= 10:
+        return f"{price:.2f}"
+    else:
+        return f"{price:.4f}"
+
+
+# ── Public fetch functions ─────────────────────────────────────────────────────
 def fetch_commodities() -> dict:
-    """מחזיר dict עם מחיר + שינוי % לכל סחורה."""
-    results = {}
-    for key, meta in COMMODITIES.items():
-        try:
-            ticker = yf.Ticker(meta["ticker"])
-            hist = ticker.history(period="2d")
-            if hist.empty or len(hist) < 1:
-                raise ValueError("no data")
-
-            close_today = hist["Close"].iloc[-1]
-
-            if len(hist) >= 2:
-                close_prev = hist["Close"].iloc[-2]
-                change_pct = ((close_today - close_prev) / close_prev) * 100
-                change_str = f"{change_pct:+.1f}%"
-                direction = "up" if change_pct >= 0 else "down"
-            else:
-                change_str = "0.0%"
-                direction = "flat"
-
-            # פורמט מחיר
-            if close_today >= 1000:
-                price_str = f"{close_today:,.2f}"
-            else:
-                price_str = f"{close_today:.2f}"
-
-            results[key] = {
-                "price":     price_str,
-                "change":    change_str,
-                "direction": direction,
-                "sector":    meta["sector"],
-                "label":     meta["label"],
-            }
-        except Exception as e:
-            print(f"[WARN] {key} ({meta['ticker']}): {e}")
-            results[key] = {
-                "price":     UNVERIFIED_LABEL,
-                "change":    "—",
-                "direction": "flat",
-                "sector":    meta["sector"],
-                "label":     meta["label"],
-            }
-    return results
+    out = {}
+    for key, meta in COMMODITIES_META.items():
+        data = _fetch_one(meta["ticker"])
+        if data:
+            out[key] = {**meta,
+                        "price": _fmt(data["price_raw"]),
+                        "price_raw": data["price_raw"],
+                        "change": data["change"],
+                        "direction": data["direction"],
+                        "verified": True}
+        else:
+            out[key] = {**meta,
+                        "price": UNVERIFIED,
+                        "price_raw": 0,
+                        "change": "—",
+                        "direction": "flat",
+                        "verified": False}
+    return out
 
 
-# ─── News ─────────────────────────────────────────────────────────────────────
-def fetch_headlines(api_key: str, max_articles: int = 8) -> list[str]:
-    """מביא כותרות שוק/סחורות מ-NewsAPI."""
+def fetch_indices() -> dict:
+    out = {}
+    for key, meta in INDICES_META.items():
+        data = _fetch_one(meta["ticker"])
+        if data:
+            out[key] = {**meta,
+                        "price": _fmt(data["price_raw"]),
+                        "price_raw": data["price_raw"],
+                        "change": data["change"],
+                        "direction": data["direction"],
+                        "verified": True}
+        else:
+            out[key] = {**meta,
+                        "price": UNVERIFIED,
+                        "price_raw": 0,
+                        "change": "—",
+                        "direction": "flat",
+                        "verified": False}
+    return out
+
+
+def fetch_companies() -> dict:
+    out = {}
+    for key, meta in COMPANIES_META.items():
+        data = _fetch_one(meta["ticker"])
+        if data:
+            out[key] = {**meta,
+                        "price": _fmt(data["price_raw"]),
+                        "price_raw": data["price_raw"],
+                        "change": data["change"],
+                        "direction": data["direction"],
+                        "verified": True}
+        else:
+            out[key] = {**meta,
+                        "price": UNVERIFIED,
+                        "price_raw": 0,
+                        "change": "—",
+                        "direction": "flat",
+                        "verified": False}
+    return out
+
+
+def fetch_headlines(api_key: str, max_articles: int = 12) -> list[str]:
+    """Fetch recent market/energy/commodities headlines from NewsAPI."""
     yesterday = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
-    url = "https://newsapi.org/v2/everything"
     params = {
-        "q": "(oil OR energy OR commodities OR wheat OR gold) AND (market OR price OR stocks)",
+        "q": (
+            "(oil OR crude OR 'natural gas' OR gold OR copper OR commodities "
+            "OR nvidia OR AI OR 'interest rate' OR 'stock market' OR earnings) "
+            "AND (market OR price OR stocks OR fed OR forecast)"
+        ),
         "language": "en",
         "sortBy": "publishedAt",
         "pageSize": max_articles,
@@ -89,89 +170,58 @@ def fetch_headlines(api_key: str, max_articles: int = 8) -> list[str]:
         "apiKey": api_key,
     }
     try:
-        resp = requests.get(url, params=params, timeout=10)
+        resp = requests.get("https://newsapi.org/v2/everything",
+                            params=params, timeout=12)
         resp.raise_for_status()
-        articles = resp.json().get("articles", [])
-        return [a["title"] for a in articles if a.get("title")]
+        arts = resp.json().get("articles", [])
+        # Include title + snippet of description for richer context
+        return [
+            f"{a['title']} — {(a.get('description') or '')[:120]}"
+            for a in arts if a.get("title")
+        ]
     except Exception as e:
-        print(f"[WARN] NewsAPI: {e}")
+        print(f"  [WARN] NewsAPI: {e}")
         return []
 
 
-# ─── Gemini TL;DR ─────────────────────────────────────────────────────────────
-def generate_tldr(api_key: str, headlines: list[str], commodities: dict) -> list[str]:
-    """
-    שולח כותרות ונתוני סחורות ל-Gemini ומקבל 3 נקודות TL;DR בעברית.
-    """
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel("gemini-1.5-flash")
+# ── Main entry ─────────────────────────────────────────────────────────────────
+def collect_all_market_data() -> dict:
+    """Collects and returns all market data as a single dict."""
+    news_key = os.environ["NEWS_API_KEY"]
 
-    # בניית קונטקסט
-    commodity_summary = "\n".join(
-        f"- {v['label']}: {v['price']} ({v['change']})"
-        for v in commodities.values()
-        if v["price"] != UNVERIFIED_LABEL
-    )
-    headlines_text = "\n".join(f"- {h}" for h in headlines[:8]) if headlines else "אין כותרות זמינות."
+    print("  📈 מדדים (S&P 500, נאסד\"ק, ת\"א-125)...")
+    indices = fetch_indices()
 
-    prompt = f"""אתה אנליסט שוק המון ישראלי. 
-בהתבסס על הנתונים הבאים, כתוב בדיוק 3 נקודות TL;DR בעברית — כל נקודה משפט אחד קצר וחד.
-אל תכלול מספרים, רק תובנה/מגמה כללית.
-פורמט: שלוש שורות בלבד, ללא כותרות, ללא נקודות/bullets.
-
-📈 מחירי סחורות היום:
-{commodity_summary}
-
-📰 כותרות שוק:
-{headlines_text}
-
-כתוב 3 נקודות TL;DR בעברית:"""
-
-    try:
-        response = model.generate_content(prompt)
-        lines = [l.strip() for l in response.text.strip().split("\n") if l.strip()]
-        # לקחת רק 3 שורות ראשונות, לנקות מספרים/bullets
-        clean = []
-        for line in lines[:3]:
-            line = line.lstrip("123456789.-) ").strip()
-            if line:
-                clean.append(line)
-        # אם יש פחות מ-3, נוסיף fallback
-        while len(clean) < 3:
-            clean.append("שוק הסחורות הגלובלי ממשיך להיות מושפע מגורמים גיאופוליטיים ומקרו-כלכליים.")
-        return clean[:3]
-    except Exception as e:
-        print(f"[WARN] Gemini: {e}")
-        return [
-            "שוק הסחורות הגלובלי מציג תנועות מעורבות בפתיחת המסחר.",
-            "נתוני המאקרו האחרונים משפיעים על מגמות האנרגיה והמתכות.",
-            "מניות הבורסה המקומית נסחרות בהתאם לאינדיקטורים הגלובליים.",
-        ]
-
-
-# ─── Main entry ───────────────────────────────────────────────────────────────
-def collect_all_data() -> dict:
-    """נקודת כניסה ראשית — מחזירה dict מלא לשימוש ב-build_report."""
-    news_api_key   = os.environ["NEWS_API_KEY"]
-    gemini_api_key = os.environ["GEMINI_API_KEY"]
-
-    print("📡 שואב נתוני סחורות (yfinance)...")
+    print("  ⛽ סחורות...")
     commodities = fetch_commodities()
 
-    print("📰 שואב כותרות שוק (NewsAPI)...")
-    headlines = fetch_headlines(news_api_key)
+    print("  🏢 מניות חברות...")
+    companies = fetch_companies()
 
-    print("🤖 מייצר TL;DR בעברית (Gemini)...")
-    tldr = generate_tldr(gemini_api_key, headlines, commodities)
+    print("  📰 כותרות חדשות...")
+    headlines = fetch_headlines(news_key)
 
     return {
         "date":        datetime.now().strftime("%d/%m/%Y"),
+        "date_en":     datetime.now().strftime("%Y-%m-%d"),
+        "indices":     indices,
         "commodities": commodities,
-        "tldr":        tldr,
+        "companies":   companies,
+        "headlines":   headlines,
     }
 
 
 if __name__ == "__main__":
-    import json
-    data = collect_all_data()
-    print(json.dumps(data, ensure_ascii=False, indent=2))
+    import json, os
+    os.environ.setdefault("NEWS_API_KEY", "TEST")
+    d = collect_all_market_data()
+    print("\n=== סחורות ===")
+    for v in d["commodities"].values():
+        print(f"  {v['label']:28} {v['price']:>12}  {v['change']:>10}")
+    print("\n=== מדדים ===")
+    for v in d["indices"].values():
+        print(f"  {v['label']:20} {v['price']:>12}  {v['change']:>10}")
+    print("\n=== חברות ===")
+    for v in d["companies"].values():
+        flag = "🇺🇸" if v["country"] == "us" else "🇮🇱"
+        print(f"  {flag} {v['label']:22} {v['ticker']:6} {v['price']:>10}  {v['change']:>10}")

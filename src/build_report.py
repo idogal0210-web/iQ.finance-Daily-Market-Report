@@ -1,185 +1,406 @@
 """
-build_report.py
-===============
-בונה את קובץ ה-HTML הסופי מהנתונים שנאספו.
+build_report.py — v2
+====================
+בונה HTML מלא לפי מבנה הדוח המלא:
+  חלק א׳: שוק המניות (ארה"ב + ישראל)
+  חלק ב׳: סחורות + גיאופוליטיקה + צווארי בקבוק
 """
 
 from datetime import datetime
 
+# ── Design tokens ─────────────────────────────────────────────────────────────
+C = {
+    "bg":           "#262624",
+    "header_bg":    "#201f1d",
+    "accent":       "#D97757",
+    "accent_dark":  "#3a2a20",
+    "accent_border":"#6b4a3a",
+    "card":         "#30302e",
+    "row1":         "#2a2a28",
+    "row2":         "#242422",
+    "text":         "#e8e6e1",
+    "muted":        "#a8a29e",
+    "dim":          "#7a7670",
+    "green":        "#4ade80",
+    "red":          "#f87171",
+    "amber":        "#f59e0b",
+    "blue":         "#60a5fa",
+}
 
-# ─── Color helpers ────────────────────────────────────────────────────────────
-def _change_html(change_str: str, direction: str) -> str:
-    """מחזיר span מעוצב בהתאם לכיוון המחיר."""
+FONT = "font-family:Arial,Helvetica,sans-serif;"
+
+
+# ── Micro helpers ──────────────────────────────────────────────────────────────
+def _change_span(change: str, direction: str) -> str:
     if direction == "up":
-        return f'<span style="color:#4ade80; font-weight:bold;">▲ {change_str}</span>'
-    elif direction == "down":
-        return f'<span style="color:#f87171; font-weight:bold;">▼ {change_str}</span>'
-    else:
-        return f'<span style="color:#a8a29e;">{change_str}</span>'
+        return f'<span style="color:{C["green"]};font-weight:bold;">▲ {change}</span>'
+    if direction == "down":
+        return f'<span style="color:{C["red"]};font-weight:bold;">▼ {change}</span>'
+    return f'<span style="color:{C["muted"]};">{change}</span>'
 
 
-def _row(label: str, price: str, change_str: str, direction: str, bg: str) -> str:
-    change_html = _change_html(change_str, direction)
+def _spacer(h: int = 10) -> str:
+    return f'<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:{C["bg"]};"><tr><td style="height:{h}px;"></td></tr></table>'
+
+
+def _text_p(content: str, extra_style: str = "") -> str:
+    if not content:
+        return ""
+    return (f'<p style="margin:0 0 8px;font-size:13.5px;color:{C["text"]};'
+            f'line-height:1.65;{FONT}{extra_style}">{content}</p>')
+
+
+# ── HEADER ────────────────────────────────────────────────────────────────────
+def _header(date: str, reading_time: str, companies_count: str) -> str:
     return f"""
-          <tr style="background-color:{bg};">
-            <td style="font-weight:bold; color:#e8e6e1; padding:9px 10px;">{label}</td>
-            <td style="color:#e8e6e1; padding:9px 10px;">{price}</td>
-            <td style="padding:9px 10px;">{change_html}</td>
-          </tr>"""
+<table width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="background:{C['header_bg']};border-bottom:4px solid {C['accent']};">
+  <tr>
+    <td dir="rtl" style="text-align:center;padding:28px 20px 20px;">
+      <h1 style="color:{C['accent']};margin:0 0 4px;font-size:22px;
+                 letter-spacing:-0.3px;{FONT}">📊 דו״ח שוק וסחורות — סקירה</h1>
+      <p style="color:{C['muted']};font-size:13px;margin:0 0 12px;{FONT}">{date} · iQ.finance</p>
+      <span style="display:inline-block;background:{C['accent_dark']};color:{C['accent']};
+                   border:1px solid {C['accent_border']};border-radius:20px;
+                   padding:5px 16px;font-size:12px;font-weight:bold;{FONT}">
+        ⏱ {reading_time} דקות קריאה · {companies_count} חברות בפוקוס
+      </span>
+    </td>
+  </tr>
+</table>"""
 
 
-def _section(title: str, rows_html: str) -> str:
+# ── TL;DR ─────────────────────────────────────────────────────────────────────
+def _tldr(points: list[str]) -> str:
+    items = "".join(
+        f'<p style="margin:0 0 7px;font-size:13.5px;color:{C["text"]};line-height:1.65;{FONT}">'
+        f'{i + 1}. {pt}</p>'
+        for i, pt in enumerate(points[:3])
+    )
     return f"""
-  <!-- SECTION: {title} -->
-  <table width="100%" cellpadding="0" cellspacing="0" border="0"
-         style="background-color:#262624;">
-    <tr>
-      <td dir="rtl" style="padding:14px 22px 4px;">
-        <h4 style="color:#D97757; font-size:14.5px; margin:0 0 8px;">{title}</h4>
-        <table width="100%" cellpadding="0" cellspacing="0" border="0"
-               style="font-size:13.5px; border-radius:6px; overflow:hidden;">
-          <tr style="background-color:#3a2a20; border-bottom:2px solid #D97757;">
-            <td style="color:#D97757; font-weight:bold; padding:8px 10px;">סחורה</td>
-            <td style="color:#D97757; font-weight:bold; padding:8px 10px;">מחיר</td>
-            <td style="color:#D97757; font-weight:bold; padding:8px 10px;">שינוי</td>
-          </tr>
-          {rows_html}
-        </table>
-      </td>
-    </tr>
-  </table>"""
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:{C['bg']};">
+  <tr>
+    <td dir="rtl" style="padding:14px 22px 6px;">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0"
+             style="background:{C['card']};border-right:4px solid {C['accent']};border-radius:6px;">
+        <tr>
+          <td style="padding:16px 18px;">
+            <p style="margin:0 0 10px;color:{C['accent']};font-weight:bold;font-size:14px;{FONT}">
+              🔥 בקצרה — 3 דברים לדעת היום
+            </p>
+            {items}
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>"""
 
 
-# ─── Main builder ─────────────────────────────────────────────────────────────
-def build_html(data: dict) -> str:
-    """
-    מקבל את ה-dict מ-collect_all_data() ומחזיר מחרוזת HTML מלאה.
-    """
-    date_str   = data["date"]
-    tldr       = data["tldr"]
-    comms      = data["commodities"]
+# ── Part header (א׳ / ב׳) ─────────────────────────────────────────────────────
+def _part_header(num: str, title: str, subtitle: str = "") -> str:
+    sub_html = (f'<p style="margin:2px 0 0;color:{C["muted"]};font-size:12px;{FONT}">{subtitle}</p>'
+                if subtitle else "")
+    return f"""
+<table width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="background:{C['accent_dark']};border-top:3px solid {C['accent']};
+              border-bottom:1px solid #4a3520;">
+  <tr>
+    <td dir="rtl" style="padding:12px 22px;">
+      <p style="margin:0;color:{C['muted']};font-size:11px;{FONT}">חלק {num}</p>
+      <h2 style="margin:2px 0 0;color:{C['accent']};font-size:16px;{FONT}">{title}</h2>
+      {sub_html}
+    </td>
+  </tr>
+</table>"""
 
-    # ─ TL;DR lines
-    tldr_1 = tldr[0] if len(tldr) > 0 else ""
-    tldr_2 = tldr[1] if len(tldr) > 1 else ""
-    tldr_3 = tldr[2] if len(tldr) > 2 else ""
 
-    # ─ Build commodity rows by sector
-    def rows_for_sector(sector: str) -> str:
-        items = [(k, v) for k, v in comms.items() if v["sector"] == sector]
-        html = ""
-        for i, (key, v) in enumerate(items):
-            bg = "#2a2a28" if i % 2 == 0 else "#242422"
-            html += _row(v["label"], v["price"], v["change"], v["direction"], bg)
-        return html
+# ── Sub-section header (country flag) ────────────────────────────────────────
+def _subsection_header(flag: str, title: str) -> str:
+    return f"""
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:{C['bg']};">
+  <tr>
+    <td dir="rtl" style="padding:16px 22px 6px;">
+      <h3 style="color:{C['text']};font-size:15px;margin:0 0 6px;{FONT}">{flag} {title}</h3>
+      <hr style="border:none;border-top:1px solid #3a3a38;margin:0;">
+    </td>
+  </tr>
+</table>"""
 
-    energy_rows = rows_for_sector("energy")
-    metals_rows = rows_for_sector("metals")
-    agri_rows   = rows_for_sector("agri")
 
-    energy_section = _section("⛽ אנרגיה", energy_rows)
-    metals_section = _section("🥇 מתכות", metals_rows)
-    agri_section   = _section("🌾 חקלאות ואשלגן", agri_rows)
+# ── Market section (US or IL) ─────────────────────────────────────────────────
+def _market_section(macro: str, insight: str, companies: list, watch: str) -> str:
+    # Macro paragraph
+    macro_html = f"""
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:{C['bg']};">
+  <tr>
+    <td dir="rtl" style="padding:10px 22px 4px;{FONT}">
+      {_text_p(macro)}
+      {(_text_p(f'<span style="color:{C["accent"]};font-weight:bold;">{insight}</span>') if insight else "")}
+    </td>
+  </tr>
+</table>"""
 
-    # ─ Unverified note
-    unverified = [v["label"] for v in comms.values() if v["price"] == "⚪ לא אומת"]
-    if unverified:
-        unverified_note = "· נתונים שלא עברו אימות כפול מסומנים ⚪"
-    else:
-        unverified_note = "· כל הנתונים אומתו בהצלחה"
+    # Company cards
+    co_html = ""
+    if companies:
+        cards = ""
+        for c in companies:
+            d = c.get("direction", "flat")
+            border_color = C["green"] if d == "up" else (C["red"] if d == "down" else C["muted"])
+            emoji = "🔹" if d in ("up", "flat") else "🔻"
+            name   = c.get("name", "")
+            ticker = c.get("ticker", "")
+            body   = c.get("analysis", "")
+            cards += (
+                f'<p style="margin:0 0 9px;font-size:13.5px;color:{C["text"]};'
+                f'line-height:1.6;padding-right:10px;border-right:3px solid {border_color}40;{FONT}">'
+                f'{emoji} <strong style="color:{C["text"]};">{name}</strong>'
+                f' <span style="color:{C["muted"]};font-size:12px;font-weight:normal;">{ticker}</span>'
+                f' — {body}</p>'
+            )
+        co_html = f"""
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:{C['bg']};">
+  <tr>
+    <td dir="rtl" style="padding:4px 22px 4px;">
+      <p style="margin:0 0 8px;color:{C['muted']};font-size:12px;font-weight:bold;{FONT}">
+        חברות בפוקוס:
+      </p>
+      {cards}
+    </td>
+  </tr>
+</table>"""
 
-    html = f"""<!DOCTYPE html>
+    # Watch levels box
+    watch_html = ""
+    if watch:
+        watch_html = f"""
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:{C['bg']};">
+  <tr>
+    <td dir="rtl" style="padding:4px 22px 14px;">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0"
+             style="background:{C['accent_dark']};border-right:3px solid {C['accent']};border-radius:6px;">
+        <tr>
+          <td style="padding:10px 14px;font-size:13px;color:{C['text']};line-height:1.6;{FONT}">
+            {watch}
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>"""
+
+    return macro_html + co_html + watch_html
+
+
+# ── Commodity table ────────────────────────────────────────────────────────────
+def _commodity_table(title: str, items: list) -> str:
+    rows = ""
+    for i, v in enumerate(items):
+        bg = C["row1"] if i % 2 == 0 else C["row2"]
+        rows += (
+            f'<tr style="background:{bg};">'
+            f'<td style="font-weight:bold;color:{C["text"]};padding:9px 10px;{FONT}">{v["label"]}</td>'
+            f'<td style="color:{C["text"]};padding:9px 10px;{FONT}">{v["price"]}</td>'
+            f'<td style="padding:9px 10px;{FONT}">{_change_span(v["change"], v["direction"])}</td>'
+            f'</tr>'
+        )
+    return f"""
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:{C['bg']};">
+  <tr>
+    <td dir="rtl" style="padding:14px 22px 4px;">
+      <h4 style="color:{C['accent']};font-size:14.5px;margin:0 0 8px;{FONT}">{title}</h4>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-radius:6px;overflow:hidden;">
+        <tr style="background:{C['accent_dark']};">
+          <td style="color:{C['accent']};font-weight:bold;padding:8px 10px;{FONT}">סחורה</td>
+          <td style="color:{C['accent']};font-weight:bold;padding:8px 10px;{FONT}">מחיר</td>
+          <td style="color:{C['accent']};font-weight:bold;padding:8px 10px;{FONT}">שינוי</td>
+        </tr>
+        {rows}
+      </table>
+    </td>
+  </tr>
+</table>"""
+
+
+# ── Geopolitical section ───────────────────────────────────────────────────────
+def _geo_section(geo: dict) -> str:
+    color  = geo.get("event_color", "🟠")
+    event  = geo.get("main_event", "")
+    fact   = geo.get("verified_fact", "")
+    struct = geo.get("structural_meaning", "")
+
+    # Main event card
+    event_card = f"""
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:{C['bg']};">
+  <tr>
+    <td dir="rtl" style="padding:14px 22px 6px;">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0"
+             style="background:{C['card']};border-right:4px solid {C['amber']};border-radius:6px;">
+        <tr>
+          <td style="padding:14px 18px;">
+            <p style="margin:0 0 8px;color:{C['amber']};font-weight:bold;font-size:14px;{FONT}">
+              {color} אירוע: {event}
+            </p>
+            {"<p style='margin:0 0 6px;font-size:13px;color:" + C["green"] + ";" + FONT + "'>" + fact + "</p>" if fact else ""}
+            {"<p style='margin:0;font-size:13px;color:" + C["text"] + ";line-height:1.6;" + FONT + "'>" + struct + "</p>" if struct else ""}
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>"""
+
+    # Bottlenecks
+    bn_html = ""
+    for idx, bn in enumerate(geo.get("bottlenecks", [])):
+        bn_type  = "ראשי" if bn.get("type") == "main" else "משני (סחורה פחות מסוקרת)"
+        title    = bn.get("title", "")
+        edu      = bn.get("educational", "")
+        conc     = bn.get("conclusion", "")
+
+        companies_html = ""
+        for c in bn.get("benefiting", []):
+            companies_html += (
+                f'<p style="margin:0 0 8px;font-size:13.5px;color:{C["text"]};line-height:1.6;{FONT}">'
+                f'🔹 <strong>{c["name"]}</strong>'
+                f' <span style="color:{C["muted"]};font-size:12px;">{c["ticker"]}</span>'
+                f' — {c["analysis"]}</p>'
+            )
+        for c in bn.get("at_risk", []):
+            companies_html += (
+                f'<p style="margin:0 0 8px;font-size:13.5px;color:{C["text"]};line-height:1.6;{FONT}">'
+                f'🔻 <strong>{c["name"]}</strong>'
+                f' <span style="color:{C["muted"]};font-size:12px;">{c["ticker"]}</span>'
+                f' — {c["analysis"]}</p>'
+            )
+
+        conc_html = ""
+        if conc:
+            conc_html = (
+                f'<table width="100%" cellpadding="0" cellspacing="0" border="0">'
+                f'<tr><td style="padding:8px 0 0;">'
+                f'<table width="100%" cellpadding="0" cellspacing="0" border="0"'
+                f' style="background:{C["accent_dark"]};border-right:3px solid {C["accent"]};border-radius:6px;">'
+                f'<tr><td style="padding:10px 14px;font-size:13px;color:{C["text"]};line-height:1.6;{FONT}">'
+                f'{conc}</td></tr></table></td></tr></table>'
+            )
+
+        bn_html += f"""
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:{C['bg']};">
+  <tr>
+    <td dir="rtl" style="padding:10px 22px 6px;">
+      <p style="margin:0 0 6px;color:{C['accent']};font-weight:bold;font-size:13.5px;{FONT}">
+        ⚠️ צוואר בקבוק {bn_type}: {title}
+      </p>
+      {"<p style='margin:0 0 10px;font-size:13px;color:" + C['muted'] + ";line-height:1.65;" + FONT + "'>" + edu + "</p>" if edu else ""}
+      <p style="margin:0 0 6px;color:{C['muted']};font-size:12px;font-weight:bold;{FONT}">
+        חברות שעשויות להרוויח / בסיכון:
+      </p>
+      {companies_html}
+      {conc_html}
+    </td>
+  </tr>
+</table>"""
+
+    return event_card + bn_html
+
+
+# ── Footer ─────────────────────────────────────────────────────────────────────
+def _footer(note: str) -> str:
+    return f"""
+<table width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="background:{C['header_bg']};border-top:4px solid {C['accent']};">
+  <tr>
+    <td dir="rtl" style="text-align:center;padding:18px 20px;">
+      <p style="font-size:11px;color:{C['dim']};margin:0 0 6px;{FONT}">
+        מקורות נתונים מאומתים מתעדכנים יומית {note}
+      </p>
+      <p style="font-size:12px;color:{C['muted']};margin:0;{FONT}">
+        ⚠️ הדו״ח משמש למטרות לימוד ומידע בלבד, ואינו מהווה ייעוץ השקעות
+      </p>
+    </td>
+  </tr>
+</table>"""
+
+
+# ── Main builder ───────────────────────────────────────────────────────────────
+def build_html(analysis: dict, market_data: dict) -> str:
+    """Assembles the full HTML report from Gemini analysis + raw market data."""
+    date_str        = market_data["date"]
+    reading_time    = analysis.get("reading_time", "7")
+    co_count        = analysis.get("focus_companies_count", "10")
+    tldr            = analysis.get("tldr", [])
+    us              = analysis.get("us_market", {})
+    il              = analysis.get("israel_market", {})
+    geo             = analysis.get("geopolitical", {})
+    comms           = market_data["commodities"]
+
+    # Commodity groups
+    energy = [v for v in comms.values() if v["sector"] == "energy"]
+    metals = [v for v in comms.values() if v["sector"] == "metals"]
+    agri   = [v for v in comms.values() if v["sector"] == "agri"]
+
+    # Footer note
+    unverified = [v["label"] for v in comms.values() if not v["verified"]]
+    note = "· נתונים שלא עברו אימות מסומנים ⚪" if unverified else "· כל הנתונים אומתו בהצלחה"
+
+    body = "\n".join([
+        _header(date_str, reading_time, co_count),
+        _spacer(10),
+        _tldr(tldr),
+
+        # Part A
+        _part_header("א׳", "📈 שוק המניות — ארה״ב וישראל",
+                     "השפעות מאקרו על חברות מפתח באנרגיה, היי-טק ו-AI, ביטחון, רפואה ונדל״ן."),
+        _subsection_header("🇺🇸", "השוק האמריקאי"),
+        _market_section(
+            us.get("macro_analysis", ""),
+            us.get("insight", ""),
+            us.get("companies", []),
+            us.get("watch_levels", ""),
+        ),
+        _subsection_header("🇮🇱", "השוק הישראלי"),
+        _market_section(
+            il.get("macro_analysis", ""),
+            il.get("insight", ""),
+            il.get("companies", []),
+            il.get("watch_levels", ""),
+        ),
+        _spacer(6),
+
+        # Part B
+        _part_header("ב׳", "📦 סחורות, גיאופוליטיקה וצווארי בקבוק"),
+        _commodity_table("⛽ אנרגיה", energy),
+        _commodity_table("🔩 מתכות", metals),
+        _commodity_table("🌾 חקלאות ואשלגן", agri),
+        _spacer(6),
+
+        # Geo header
+        """<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#262624;">
+  <tr><td dir="rtl" style="padding:14px 22px 4px;">
+    <h4 style="color:#D97757;font-size:14.5px;margin:0;font-family:Arial,sans-serif;">
+      🌍 מגמה גיאופוליטית מתפתחת
+    </h4>
+  </td></tr>
+</table>""",
+
+        _geo_section(geo),
+        _spacer(10),
+        _footer(note),
+    ])
+
+    return f"""<!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <title>דו״ח שוק וסחורות — {date_str}</title>
 </head>
-<body style="margin:0; padding:0; background-color:#262624; font-family: Arial, sans-serif;">
-
-  <!-- HEADER -->
-  <table width="100%" cellpadding="0" cellspacing="0" border="0"
-         style="background-color:#201f1d; border-bottom:4px solid #D97757;">
-    <tr>
-      <td dir="rtl" style="text-align:center; padding:28px 20px 18px;">
-        <h1 style="color:#D97757; margin:0 0 4px; font-size:22px; letter-spacing:-0.3px;">
-          📊 דו״ח שוק וסחורות
-        </h1>
-        <p style="color:#a8a29e; font-size:13px; margin:0 0 12px;">{date_str} · iQ.finance</p>
-        <span style="display:inline-block; background-color:#3a2a20; color:#D97757;
-                     border:1px solid #6b4a3a; border-radius:20px;
-                     padding:5px 16px; font-size:12px; font-weight:bold;">
-          ⏱ כ-4 דקות קריאה · סחורות עיקריות
-        </span>
-      </td>
-    </tr>
-  </table>
-
-  <!-- DIVIDER -->
-  <table width="100%" cellpadding="0" cellspacing="0" border="0"
-         style="background-color:#262624;">
-    <tr><td style="height:12px;"></td></tr>
-  </table>
-
-  <!-- TL;DR BOX -->
-  <table width="100%" cellpadding="0" cellspacing="0" border="0"
-         style="background-color:#262624;">
-    <tr>
-      <td dir="rtl" style="padding:6px 22px 10px;">
-        <table width="100%" cellpadding="0" cellspacing="0" border="0"
-               style="background-color:#30302e; border-right:4px solid #D97757;
-                      border-radius:6px;">
-          <tr>
-            <td style="padding:16px 18px;">
-              <p style="margin:0 0 10px; color:#D97757; font-weight:bold; font-size:14px;">
-                🔥 בקצרה — 3 דברים לדעת היום
-              </p>
-              <p style="margin:0 0 6px; font-size:13.5px; color:#e8e6e1; line-height:1.55;">
-                1. {tldr_1}
-              </p>
-              <p style="margin:0 0 6px; font-size:13.5px; color:#e8e6e1; line-height:1.55;">
-                2. {tldr_2}
-              </p>
-              <p style="margin:0; font-size:13.5px; color:#e8e6e1; line-height:1.55;">
-                3. {tldr_3}
-              </p>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-
-  <!-- COMMODITY SECTIONS -->
-  {energy_section}
-  {metals_section}
-  {agri_section}
-
-  <!-- SPACER -->
-  <table width="100%" cellpadding="0" cellspacing="0" border="0"
-         style="background-color:#262624;">
-    <tr><td style="height:14px;"></td></tr>
-  </table>
-
-  <!-- FOOTER -->
-  <table width="100%" cellpadding="0" cellspacing="0" border="0"
-         style="background-color:#201f1d; border-top:4px solid #D97757;">
-    <tr>
-      <td dir="rtl" style="text-align:center; padding:18px 20px;">
-        <p style="font-size:11px; color:#7a7670; margin:0 0 6px;">
-          מקורות נתונים מתעדכנים יומית {unverified_note}
-        </p>
-        <p style="font-size:12px; color:#a8a29e; margin:0;">
-          ⚠️ הדו״ח משמש למטרות לימוד ומידע בלבד, ואינו מהווה ייעוץ השקעות
-        </p>
-      </td>
-    </tr>
-  </table>
-
+<body style="margin:0;padding:0;background:{C['bg']};">
+{body}
 </body>
 </html>"""
-
-    return html
 
 
 def save_report(html: str, output_dir: str = ".") -> str:
@@ -187,29 +408,5 @@ def save_report(html: str, output_dir: str = ".") -> str:
     path = f"{output_dir}/{filename}"
     with open(path, "w", encoding="utf-8") as f:
         f.write(html)
-    print(f"✅ Report saved: {path}")
+    print(f"  ✅ Saved: {path}")
     return path
-
-
-if __name__ == "__main__":
-    # בדיקה עם נתוני דמה
-    dummy = {
-        "date": "17/08/2026",
-        "tldr": [
-            "מחירי הנפט עולים בשל מתיחות גאופוליטית במפרץ הפרסי.",
-            "הזהב שומר על יציבות בצל חשש מהאטה כלכלית גלובלית.",
-            "מניות החקלאות בלחץ לאחר דוחות יבול מאכזבים מאירופה.",
-        ],
-        "commodities": {
-            "wti":     {"label": "WTI Crude",    "price": "78.40",   "change": "+2.3%", "direction": "up",   "sector": "energy"},
-            "brent":   {"label": "Brent Crude",   "price": "82.10",   "change": "-0.5%", "direction": "down", "sector": "energy"},
-            "nat_gas": {"label": "Natural Gas",   "price": "3.45",    "change": "+1.1%", "direction": "up",   "sector": "energy"},
-            "gold":    {"label": "Gold",          "price": "2,350.20","change": "+1.1%", "direction": "up",   "sector": "metals"},
-            "nickel":  {"label": "Nickel",        "price": "⚪ לא אומת","change": "—",  "direction": "flat", "sector": "metals"},
-            "wheat":   {"label": "Wheat",         "price": "560.00",  "change": "+0.8%", "direction": "up",   "sector": "agri"},
-            "potash":  {"label": "ICL (אשלגן)",  "price": "4.32",    "change": "-0.2%", "direction": "down", "sector": "agri"},
-        }
-    }
-    html = build_html(dummy)
-    save_report(html, "/tmp")
-    print("Preview saved to /tmp")
