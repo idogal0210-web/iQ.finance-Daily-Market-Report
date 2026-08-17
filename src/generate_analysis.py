@@ -1,11 +1,12 @@
 """
 generate_analysis.py — v3
 ==========================
-שולח נתוני שוק עשירים ל-Gemini 1.5 Pro ומקבל ניתוח מלא ומעמיק.
+שולח נתוני שוק עשירים ל-Gemini ומקבל ניתוח מלא ומעמיק.
 """
 
 import json
 import google.generativeai as genai
+from google.generativeai.types import HarmCategory, HarmBlockThreshold
 
 
 # ── Context builders ───────────────────────────────────────────────────────────
@@ -172,10 +173,18 @@ def generate_report(api_key: str, market_data: dict) -> dict:
   }}
 }}"""
 
+    safety_settings = {
+        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+    }
+
     models_to_try = ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-2.0-flash"]
     last_ex = None
 
     for model_name in models_to_try:
+        response = None
         try:
             model = genai.GenerativeModel(
                 model_name,
@@ -184,6 +193,7 @@ def generate_report(api_key: str, market_data: dict) -> dict:
                     "response_mime_type": "application/json",
                     "max_output_tokens":  8192,
                 },
+                safety_settings=safety_settings,
             )
             response = model.generate_content(prompt)
             text = getattr(response, "text", "")
@@ -191,15 +201,16 @@ def generate_report(api_key: str, market_data: dict) -> dict:
             print(f"  ✅ {model_name}: ניתוח נוצר בהצלחה")
             return result
         except json.JSONDecodeError:
-            text = getattr(response, "text", "")
-            s, e = text.find("{"), text.rfind("}") + 1
-            if s != -1 and e > s:
-                try:
-                    res = json.loads(text[s:e])
-                    print(f"  ✅ {model_name}: ניתוח חולץ מ-JSON")
-                    return res
-                except Exception:
-                    pass
+            if response:
+                text = getattr(response, "text", "")
+                s, e = text.find("{"), text.rfind("}") + 1
+                if s != -1 and e > s:
+                    try:
+                        res = json.loads(text[s:e])
+                        print(f"  ✅ {model_name}: ניתוח חולץ מ-JSON")
+                        return res
+                    except Exception:
+                        pass
         except Exception as ex:
             print(f"  [WARN] {model_name} error: {ex}")
             last_ex = ex
