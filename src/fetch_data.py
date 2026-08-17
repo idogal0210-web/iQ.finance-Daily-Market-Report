@@ -1,9 +1,8 @@
 """
-fetch_data.py — v3
+fetch_data.py — v4
 ==================
-FMP API    → מניות ומדדים (נתונים עשירים: 52-week, MA, volume, market cap)
+FMP API    → מניות, מדדים וחדשות שוק (stable endpoint)
 yfinance   → סחורות (fallback גם למניות שFMP לא תומך בחינם)
-NewsAPI    → כותרות עיתונות
 """
 
 import os
@@ -206,35 +205,26 @@ def fetch_companies(fmp_key: str) -> dict:
 
 
 def fetch_headlines(max_articles: int = 12) -> list[str]:
-    """Fetch headlines from NewsAPI — optional, skipped gracefully if key missing."""
-    news_key = os.environ.get("NEWS_API_KEY", "")
-    if not news_key:
-        print("  [INFO] NEWS_API_KEY לא הוגדר — מדלג על כותרות חדשות")
+    """Fetch headlines from Financial Modeling Prep (FMP) news API."""
+    fmp_key = os.environ.get("FMP_API_KEY", "")
+    if not fmp_key:
+        print("  [INFO] FMP_API_KEY לא הוגדר — מדלג על כותרות חדשות")
         return []
-    yesterday = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
-    params = {
-        "q": (
-            "(oil OR crude OR 'natural gas' OR gold OR copper OR commodities "
-            "OR nvidia OR 'artificial intelligence' OR 'interest rate' "
-            "OR 'stock market' OR earnings OR 'Federal Reserve' OR geopolitical) "
-            "AND (market OR price OR stocks OR forecast OR supply)"
-        ),
-        "language":  "en",
-        "sortBy":    "publishedAt",
-        "pageSize":  max_articles,
-        "from":      yesterday,
-        "apiKey":    news_key,
-    }
+        
     try:
-        resp = requests.get("https://newsapi.org/v2/everything", params=params, timeout=12)
+        url = f"{FMP_BASE}/stock-news?limit={max_articles}&apikey={fmp_key}"
+        resp = requests.get(url, timeout=12)
         resp.raise_for_status()
-        arts = resp.json().get("articles", [])
+        arts = resp.json()
+        if not isinstance(arts, list):
+            return []
+            
         return [
-            f"{a['title']} — {(a.get('description') or '')[:150]}"
+            f"{a.get('title', '')} — {(a.get('text') or '')[:150]}"
             for a in arts if a.get("title")
         ]
     except Exception as e:
-        print(f"  [NEWS WARN] {e}")
+        print(f"  [FMP NEWS WARN] {e}")
         return []
 
 
@@ -251,7 +241,7 @@ def collect_all_market_data() -> dict:
     print("  🏢 מניות חברות (FMP + yfinance)...")
     companies = fetch_companies(fmp_key)
 
-    print("  📰 כותרות חדשות (NewsAPI — אופציונלי)...")
+    print("  📰 כותרות חדשות (FMP News)...")
     headlines = fetch_headlines()
 
     return {
