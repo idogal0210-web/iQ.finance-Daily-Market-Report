@@ -14,10 +14,16 @@ def _rich_company_line(v: dict) -> str:
     parts = [f"  {'🇺🇸' if v['country']=='us' else '🇮🇱'} {v['label']:22} ({v.get('ticker_fmp') or v.get('ticker_yf','?'):6})"]
     parts.append(f"  price=${v['price']}  change={v['change']}")
     if v.get("year_high") and v.get("year_low"):
-        parts.append(f"  52wk=[{v['year_low']:.2f}–{v['year_high']:.2f}]")
-    if v.get("ma50"):
-        rel_ma50 = ((v["price_raw"] / v["ma50"]) - 1) * 100
-        parts.append(f"  vs_MA50={rel_ma50:+.1f}%")
+        try:
+            parts.append(f"  52wk=[{float(v['year_low']):.2f}–{float(v['year_high']):.2f}]")
+        except Exception:
+            parts.append(f"  52wk=[{v['year_low']}–{v['year_high']}]")
+    if v.get("ma50") and v.get("price_raw"):
+        try:
+            rel_ma50 = ((float(v["price_raw"]) / float(v["ma50"])) - 1) * 100
+            parts.append(f"  vs_MA50={rel_ma50:+.1f}%")
+        except Exception:
+            pass
     if v.get("market_cap"):
         parts.append(f"  mktcap={v['market_cap']}")
     if v.get("volume"):
@@ -28,12 +34,18 @@ def _rich_company_line(v: dict) -> str:
 def _build_context(market_data: dict) -> str:
     lines = []
 
-    lines.append("📈 מדדים:")
+    lines.append("📈 מדדים ומט״ח:")
     for v in market_data["indices"].values():
         flag = "🇺🇸" if v["country"] == "us" else "🇮🇱"
-        yr_h = f"  52wk_high={v['year_high']:.2f}" if v.get("year_high") else ""
-        ma50 = f"  MA50={v['ma50']:.2f}" if v.get("ma50") else ""
-        lines.append(f"  {flag} {v['label']:15} price={v['price']}  chg={v['change']}{yr_h}{ma50}")
+        yr_h = ""
+        if v.get("year_high"):
+            try: yr_h = f"  52wk_high={float(v['year_high']):.2f}"
+            except Exception: yr_h = f"  52wk_high={v['year_high']}"
+        ma50 = ""
+        if v.get("ma50"):
+            try: ma50 = f"  MA50={float(v['ma50']):.2f}"
+            except Exception: ma50 = f"  MA50={v['ma50']}"
+        lines.append(f"  {flag} {v['label']:18} price={v['price']}  chg={v['change']}{yr_h}{ma50}")
 
     lines.append("\n🏢 מניות חברות:")
     for v in market_data["companies"].values():
@@ -61,20 +73,11 @@ def _build_movers(market_data: dict) -> str:
 def generate_report(api_key: str, market_data: dict) -> dict:
     genai.configure(api_key=api_key)
 
-    # Use Pro for maximum quality — 1 request/day is well within free quota
-    model = genai.GenerativeModel(
-        "gemini-1.5-pro",
-        generation_config={
-            "temperature":          0.5,
-            "response_mime_type":   "application/json",
-            "max_output_tokens":    8192,
-        },
-    )
-
     context   = _build_context(market_data)
     movers    = _build_movers(market_data)
     headlines = "\n".join(f"  • {h[:220]}" for h in market_data["headlines"][:12]) or "אין כותרות."
     date_str  = market_data["date"]
+    usdils_val = market_data["indices"].get("usdils", {}).get("price", "⚪ לא זמין")
 
     prompt = f"""אתה אנליסט פיננסי ישראלי בכיר הכותב עבור iQ.finance דוח שוק יומי מקיף ומעמיק.
 היום: {date_str}
@@ -90,19 +93,19 @@ def generate_report(api_key: str, market_data: dict) -> dict:
 
 ━━━ הוראות חובה ━━━
 🔴 CRITICAL — MINIMUM LENGTH REQUIREMENTS (אל תקצר!):
-  • macro_analysis (US):     לפחות 5 משפטים מלאים עם מספרים ספציפיים
-  • macro_analysis (Israel): לפחות 3 משפטים מלאים עם מספרים
-  • כל company analysis:     2-3 משפטים: מחיר, שינוי%, רמת 52-שבועות, ממוצע נע 50, קטליזטור
-  • educational (bottleneck): לפחות 3 משפטים עם מנגנון שוק ספציפי
-  • watch_levels:            לפחות 2 תנאים עם רמות מחיר מדויקות
+  • macro_analysis (US):     לפחות 5 משפטים מלאים עם מספרים ספציפיים (S&P 500, נאסד"ק, דאו).
+  • macro_analysis (Israel): לפחות 3 משפטים מלאים עם מספרים (ת"א-125, שער דולר/שקל {usdils_val}).
+  • כל company analysis:     2-3 משפטים: מחיר מדויק, שינוי%, יחס ל-52 שבועות/MA50, וקטליזטור עסקי/מאקרו.
+  • educational (bottleneck): לפחות 3 משפטים עם מנגנון שוק ספציפי.
+  • watch_levels:            לפחות 2 תנאים עם רמות מחיר מדויקות.
   • קריאה מוערכת: 7-8 דקות → כתוב בהתאם!
 
 🔵 כללי כתיבה:
-  • כל הטקסט בעברית בלבד
-  • השתמש במספרים המדויקים מהנתונים (52-week highs/lows, MA50, market cap, volume)
-  • מידע שאינו בנתונים: סמן ⚪
-  • סגנון: ישיר, מספרי, מניע לפעולה
-  • company direction: "up"/"down"/"flat"
+  • כל הטקסט בעברית בלבד.
+  • השתמש במספרים המדויקים המופיעים בנתונים בזמן אמת.
+  • אל תוסיף סימני ⚪ אלא אם הנתון חסר לגמרי בנתונים שנמסרו.
+  • סגנון: מקצועי, מספרי, מניע לפעולה.
+  • company direction: "up" / "down" / "flat"
 
 ━━━ JSON Schema — החזר JSON בלבד ━━━
 {{
@@ -111,146 +114,98 @@ def generate_report(api_key: str, market_data: dict) -> dict:
   "tldr": [
     "נקודה 1 עם מספרים ממשיים מהנתונים: מדד/מחיר/מניה + הסבר",
     "נקודה 2 — מגמה גלובלית או גיאופוליטית עם נתון ספציפי",
-    "נקודה 3 — אירוע ישראלי / מאקרו + מספר"
+    "נקודה 3 — אירוע ישראלי / מאקרו + מספר שער דולר/שקל ({usdils_val})"
   ],
   "us_market": {{
-    "macro_analysis": "לפחות 5 משפטים: מה עשו S&P 500 ({market_data['indices'].get('sp500', {}).get('price','?')}), נאסד\"ק ({market_data['indices'].get('nasdaq', {}).get('price','?')}), ודאו ({market_data['indices'].get('dow', {}).get('price','?')}) — הסיבה, גורמים מניעים, מה הניע את המסחר, תחזיות ריבית, Jackson Hole/CPI/PPI אם רלוונטי. השתמש ברמות 52-שבועות.",
-    "insight": "תובנה: משפט חד שמסביר דינמיקה לא-מובנת-מאליה",
+    "macro_analysis": "ניתוח מאקרו מקיף לארה\"ב (לפחות 5 משפטים עם נתונים מספריים)",
+    "insight": "תובנת מאקרו חדה",
     "companies": [
       {{
-        "name": "Nvidia",
+        "name": "שם החברה (לדוגמה Nvidia)",
         "ticker": "NVDA",
         "direction": "up",
-        "analysis": "2-3 משפטים: מחיר ${market_data['companies'].get('nvda', {}).get('price','?')} ({market_data['companies'].get('nvda', {}).get('change','?')} ביום), יחס לממוצע 50 יום ולשיא 52 שבועות, קטליזטור עיקרי."
-      }},
-      {{
-        "name": "Lockheed Martin",
-        "ticker": "LMT",
-        "direction": "up",
-        "analysis": "2-3 משפטים עם מחיר ${market_data['companies'].get('lmt', {}).get('price','?')} ({market_data['companies'].get('lmt', {}).get('change','?')}), רמות 52 שבועות, וגורם גיאופוליטי/ביטחוני."
-      }},
-      {{
-        "name": "Delta Air Lines",
-        "ticker": "DAL",
-        "direction": "down",
-        "analysis": "2-3 משפטים עם מחיר ${market_data['companies'].get('dal', {}).get('price','?')} ({market_data['companies'].get('dal', {}).get('change','?')}), השפעת עלות דלק, רמת ביקוש."
-      }},
-      {{
-        "name": "Vistra",
-        "ticker": "VST",
-        "direction": "up",
-        "analysis": "..."
-      }},
-      {{
-        "name": "Frontline",
-        "ticker": "FRO",
-        "direction": "up",
-        "analysis": "..."
-      }},
-      {{
-        "name": "Freeport-McMoRan",
-        "ticker": "FCX",
-        "direction": "up",
-        "analysis": "..."
-      }},
-      {{
-        "name": "Diamondback Energy",
-        "ticker": "FANG",
-        "direction": "up",
-        "analysis": "..."
+        "analysis": "ניתוח מקיף בת 2-3 משפטים עם מחיר, שינוי%, וגורם מניע"
       }}
     ],
-    "watch_levels": "🎯 למעקב: תנאי 1 עם רמת מחיר ← פעולה מומלצת; תנאי 2 עם רמת מחיר שנייה ← פעולה אחרת."
+    "watch_levels": "🎯 למעקב: רמות מחיר ותרחישים למעקב"
   }},
   "israel_market": {{
-    "macro_analysis": "לפחות 3 משפטים: ת\"א-125 ({market_data['indices'].get('ta125', {}).get('price','?')}), ריבית בנק ישראל (אחרון), שקל/דולר, כלכלה מקומית וגיאופוליטיקה.",
-    "insight": "תובנה: ...",
+    "macro_analysis": "ניתוח מאקרו מקיף לישראל (לפחות 3 משפטים כולל ת\"א-125 ושער דולר/שקל {usdils_val})",
+    "insight": "תובנת מאקרו מקומית חדה",
     "companies": [
       {{
-        "name": "אלביט מערכות",
+        "name": "שם החברה (לדוגמה אלביט מערכות)",
         "ticker": "ESLT",
         "direction": "up",
-        "analysis": "2-3 משפטים: צבר הזמנות, הכנסות, קשר לגיאופוליטיקה."
-      }},
-      {{
-        "name": "ICL Group",
-        "ticker": "ICL",
-        "direction": "up",
-        "analysis": "2-3 משפטים: אשלגן/דשנים, הסכמי אספקה, מחיר ICL proxy מהנתונים."
-      }},
-      {{
-        "name": "Southern Copper",
-        "ticker": "SCCO",
-        "direction": "up",
-        "analysis": "..."
+        "analysis": "ניתוח מקיף בת 2-3 משפטים"
       }}
     ],
-    "watch_levels": "🎯 למעקב: ..."
+    "watch_levels": "🎯 למעקב: רמות מחיר ותרחישים למעקב"
   }},
   "geopolitical": {{
     "event_color": "🟠",
-    "main_event": "2-3 משפטים: האירוע הגיאופוליטי הדומיננטי, פרטים ומספרים ספציפיים.",
-    "verified_fact": "✅ עובדה מאומתת: עובדה קונקרטית ומספרית.",
-    "structural_meaning": "🧭 משמעות מבנית: 2 משפטים על ההשלכה ארוכת הטווח על שווקים.",
+    "main_event": "תיאור 2-3 משפטים של האירוע הגיאופוליטי הדומיננטי",
+    "verified_fact": "✅ עובדה מאומתת: נתון מספרי קונקרטי",
+    "structural_meaning": "🧭 משמעות מבנית: השלכות ארוכות טווח",
     "bottlenecks": [
       {{
         "type": "main",
-        "title": "שם מדויק של צוואר הבקבוק הראשי",
-        "educational": "📘 הסבר לימודי: לפחות 3 משפטים המסבירים את מנגנון השוק בפירוט — כיצד הגיאופוליטיקה מחוללת עלייה בעלויות, מה מנגנון ה-ton-mile / backwardation / שוק החוזים.",
+        "title": "שם צוואר הבקבוק הראשי",
+        "educational": "📘 הסבר לימודי מפורט (לפחות 3 משפטים)",
         "benefiting": [
           {{
-            "name": "Frontline",
-            "ticker": "FRO",
-            "analysis": "ניתוח 2 משפטים עם מספרים."
-          }},
-          {{
-            "name": "Diamondback Energy",
-            "ticker": "FANG",
-            "analysis": "..."
+            "name": "שם חברה מרוויחה",
+            "ticker": "TICKER",
+            "analysis": "ניתוח 2 משפטים"
           }}
         ],
         "at_risk": [
           {{
-            "name": "Delta Air Lines",
-            "ticker": "DAL",
-            "analysis": "..."
+            "name": "שם חברה בסיכון",
+            "ticker": "TICKER",
+            "analysis": "ניתוח 2 משפטים"
           }}
         ],
-        "conclusion": "🎯 מסקנה לפעולה: רמה X ← כניסה/הגדלה; רמה Y ← יציאה/צמצום."
-      }},
-      {{
-        "type": "secondary",
-        "title": "שם צוואר בקבוק משני (סחורה שונה מהראשון)",
-        "educational": "📘 הסבר לימודי: לפחות 3 משפטים.",
-        "benefiting": [
-          {{"name": "Freeport-McMoRan", "ticker": "FCX", "analysis": "..."}},
-          {{"name": "Southern Copper",   "ticker": "SCCO","analysis": "..."}}
-        ],
-        "at_risk": [],
-        "conclusion": "🎯 מסקנה לפעולה: ..."
+        "conclusion": "🎯 מסקנה לפעולה"
       }}
     ]
   }}
 }}"""
 
-    try:
-        response = model.generate_content(prompt)
-        result   = json.loads(response.text)
-        print("  ✅ Gemini Pro: ניתוח נוצר בהצלחה")
-        return result
-    except json.JSONDecodeError:
-        text = getattr(response, "text", "")
-        s, e = text.find("{"), text.rfind("}") + 1
-        if s != -1 and e > s:
-            try:
-                return json.loads(text[s:e])
-            except Exception:
-                pass
-        print("  [WARN] JSON parse failed — using fallback")
-        return _fallback(market_data)
-    except Exception as ex:
-        print(f"  [WARN] Gemini error: {ex}")
-        return _fallback(market_data)
+    models_to_try = ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-2.0-flash"]
+    last_ex = None
+
+    for model_name in models_to_try:
+        try:
+            model = genai.GenerativeModel(
+                model_name,
+                generation_config={
+                    "temperature":        0.5,
+                    "response_mime_type": "application/json",
+                    "max_output_tokens":  8192,
+                },
+            )
+            response = model.generate_content(prompt)
+            text = getattr(response, "text", "")
+            result = json.loads(text)
+            print(f"  ✅ {model_name}: ניתוח נוצר בהצלחה")
+            return result
+        except json.JSONDecodeError:
+            text = getattr(response, "text", "")
+            s, e = text.find("{"), text.rfind("}") + 1
+            if s != -1 and e > s:
+                try:
+                    res = json.loads(text[s:e])
+                    print(f"  ✅ {model_name}: ניתוח חולץ מ-JSON")
+                    return res
+                except Exception:
+                    pass
+        except Exception as ex:
+            print(f"  [WARN] {model_name} error: {ex}")
+            last_ex = ex
+
+    print("  [WARN] All Gemini models failed — using fallback")
+    return _fallback(market_data)
 
 
 def _fallback(market_data: dict) -> dict:

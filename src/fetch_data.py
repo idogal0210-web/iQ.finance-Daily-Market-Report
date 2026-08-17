@@ -31,6 +31,7 @@ INDICES_META = {
     "nasdaq": {"ticker_fmp": "^IXIC",  "ticker_yf": "^IXIC",  "label": 'נאסד"ק',    "country": "us"},
     "dow":    {"ticker_fmp": "^DJI",   "ticker_yf": "^DJI",   "label": "דאו ג'ונס", "country": "us"},
     "ta125":  {"ticker_fmp": None,     "ticker_yf": "^TA125.TA","label": 'ת"א-125',  "country": "il"},
+    "usdils": {"ticker_fmp": None,     "ticker_yf": "USDILS=X","label": 'דולר / שקל', "country": "il"},
 }
 
 COMPANIES_META = {
@@ -62,6 +63,8 @@ def _fetch_fmp(ticker: str, api_key: str) -> dict | None:
     Returns rich dict from FMP stable/quote endpoint:
     price, change%, direction, 52-week range, MAs, volume, market cap.
     """
+    if not api_key:
+        return None
     try:
         url = f"{FMP_BASE}/quote?symbol={ticker}&apikey={api_key}"
         resp = requests.get(url, timeout=12)
@@ -98,14 +101,14 @@ def _fetch_fmp(ticker: str, api_key: str) -> dict | None:
         return None
 
 
-# ── yfinance fetch (fallback) ──────────────────────────────────────────────────
+# ── yfinance fetch (rich fallback) ──────────────────────────────────────────────
 def _fetch_yf(ticker: str) -> dict | None:
-    """Fallback: yfinance for commodities and unsupported stocks."""
+    """Fallback: yfinance for commodities, indices, and unsupported stocks with full stats."""
     try:
         t    = yf.Ticker(ticker)
-        hist = t.history(period="5d").dropna(subset=["Close"])
+        hist = t.history(period="1y").dropna(subset=["Close"])
         if hist.empty:
-            raise ValueError("empty")
+            raise ValueError("empty history")
         close = float(hist["Close"].iloc[-1])
         if len(hist) >= 2:
             prev = float(hist["Close"].iloc[-2])
@@ -114,13 +117,39 @@ def _fetch_yf(ticker: str) -> dict | None:
             chg = f"{pct:+.2f}%"
         else:
             direction, chg = "flat", "0.00%"
+
+        year_high = float(hist["High"].max()) if not hist["High"].empty else None
+        year_low  = float(hist["Low"].min()) if not hist["Low"].empty else None
+        ma50      = float(hist["Close"].tail(50).mean()) if len(hist) >= 50 else None
+        ma200     = float(hist["Close"].tail(200).mean()) if len(hist) >= 200 else None
+
+        vol_raw   = hist["Volume"].iloc[-1] if "Volume" in hist and not hist["Volume"].empty else None
+        volume    = f"{int(vol_raw):,}" if vol_raw and vol_raw > 0 else None
+
+        mc_str = None
+        try:
+            fast_info = getattr(t, "fast_info", {})
+            mc = fast_info.get("marketCap") or (t.info.get("marketCap") if hasattr(t, "info") else None)
+            if mc and mc > 0:
+                mc_str = f"${mc/1e9:.1f}B" if mc > 1e9 else f"${mc/1e6:.0f}M"
+        except Exception:
+            mc_str = None
+
         return {
-            "price":     _fmt(close),
-            "price_raw": close,
-            "change":    chg,
-            "direction": direction,
-            "verified":  True,
-            "source":    "yfinance",
+            "price":      _fmt(close),
+            "price_raw":  close,
+            "change":     chg,
+            "direction":  direction,
+            "day_low":    float(hist["Low"].iloc[-1]) if not hist["Low"].empty else None,
+            "day_high":   float(hist["High"].iloc[-1]) if not hist["High"].empty else None,
+            "year_low":   year_low,
+            "year_high":  year_high,
+            "ma50":       ma50,
+            "ma200":      ma200,
+            "market_cap": mc_str,
+            "volume":     volume,
+            "verified":   True,
+            "source":     "yfinance",
         }
     except Exception as e:
         print(f"  [YF WARN] {ticker}: {e}")
@@ -211,7 +240,7 @@ def fetch_headlines(max_articles: int = 12) -> list[str]:
 
 # ── Main entry ─────────────────────────────────────────────────────────────────
 def collect_all_market_data() -> dict:
-    fmp_key = os.environ["FMP_API_KEY"]
+    fmp_key = os.environ.get("FMP_API_KEY", "")
 
     print("  📈 מדדים (FMP + yfinance)...")
     indices = fetch_indices(fmp_key)
