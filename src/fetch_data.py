@@ -221,28 +221,90 @@ def fetch_macro() -> dict:
     return out
 
 
-def fetch_headlines(max_articles: int = 12) -> list[str]:
-    """Fetch headlines from Financial Modeling Prep (FMP) news API."""
-    fmp_key = os.environ.get("FMP_API_KEY", "")
-    if not fmp_key:
-        print("  [INFO] FMP_API_KEY לא הוגדר — מדלג על כותרות חדשות")
-        return []
-        
+def fetch_rss_feeds() -> list[str]:
+    """
+    Fetches real-time market intelligence from curated RSS feeds:
+    OilPrice (Energy), gCaptain (Maritime Bottlenecks), Calcalist (Israel Markets), CNBC (Global Macro).
+    """
+    rss_sources = [
+        {"name": "אנרגיה ונפט (OilPrice)", "url": "https://oilprice.com/rss/main", "limit": 4},
+        {"name": "ספנות וצווארי בקבוק ימיים (gCaptain)", "url": "https://gcaptain.com/feed/", "limit": 3},
+        {"name": "שוק ההון בישראל (כלכליסט)", "url": "https://www.calcalist.co.il/GeneralRSS/0,16335,L-8,00.xml", "limit": 4},
+        {"name": "מאקרו וול-סטריט (CNBC Markets)", "url": "https://search.cnbc.com/rs/search/view.html?partnerId=2000&keywords=markets&sort=date&output=rss", "limit": 4},
+    ]
+
+    headlines = []
+    
+    # Try using feedparser if available
     try:
-        url = f"{FMP_BASE}/stock-news?limit={max_articles}&apikey={fmp_key}"
-        resp = requests.get(url, timeout=12)
-        resp.raise_for_status()
-        arts = resp.json()
-        if not isinstance(arts, list):
-            return []
-            
-        return [
-            f"{a.get('title', '')} — {(a.get('text') or '')[:150]}"
-            for a in arts if a.get("title")
-        ]
-    except Exception as e:
-        print(f"  [FMP NEWS WARN] {e}")
-        return []
+        import feedparser
+        for src in rss_sources:
+            try:
+                feed = feedparser.parse(src["url"])
+                entries = feed.entries[:src["limit"]] if hasattr(feed, "entries") else []
+                for entry in entries:
+                    title = getattr(entry, "title", "").strip()
+                    summary = getattr(entry, "summary", "") or getattr(entry, "description", "")
+                    # Strip html tags if present
+                    summary = summary.replace("<p>", "").replace("</p>", "").replace("<b>", "").replace("</b>", "")
+                    summary = summary[:160].strip()
+                    if title:
+                        item_text = f"[{src['name']}] {title}"
+                        if summary:
+                            item_text += f" — {summary}"
+                        headlines.append(item_text)
+            except Exception as fe:
+                print(f"  [RSS WARN] {src['name']}: {fe}")
+    except ImportError:
+        # Fallback to requests + xml.etree
+        import xml.etree.ElementTree as ET
+        for src in rss_sources:
+            try:
+                r = requests.get(src["url"], timeout=6, headers={"User-Agent": "Mozilla/5.0"})
+                if r.status_code == 200:
+                    root = ET.fromstring(r.content)
+                    channel = root.find("channel")
+                    items = channel.findall("item")[:src["limit"]] if channel is not None else []
+                    for item in items:
+                        t = item.find("title")
+                        d = item.find("description")
+                        title = t.text.strip() if (t is not None and t.text) else ""
+                        desc = d.text.strip()[:160] if (d is not None and d.text) else ""
+                        if title:
+                            item_text = f"[{src['name']}] {title}"
+                            if desc:
+                                item_text += f" — {desc}"
+                            headlines.append(item_text)
+            except Exception as xe:
+                print(f"  [RSS XML WARN] {src['name']}: {xe}")
+
+    return headlines
+
+
+def fetch_headlines(max_articles: int = 10) -> list[str]:
+    """Fetch headlines from Financial Modeling Prep (FMP) news API + RSS feeds."""
+    fmp_headlines = []
+    fmp_key = os.environ.get("FMP_API_KEY", "")
+    if fmp_key:
+        try:
+            url = f"{FMP_BASE}/stock-news?limit={max_articles}&apikey={fmp_key}"
+            resp = requests.get(url, timeout=10)
+            if resp.status_code == 200:
+                arts = resp.json()
+                if isinstance(arts, list):
+                    fmp_headlines = [
+                        f"[FMP News] {a.get('title', '')} — {(a.get('text') or '')[:140]}"
+                        for a in arts if a.get("title")
+                    ]
+        except Exception as e:
+            print(f"  [FMP NEWS WARN] {e}")
+
+    # Fetch from RSS
+    rss_headlines = fetch_rss_feeds()
+    
+    total = rss_headlines + fmp_headlines
+    print(f"  ✓ נאספו {len(rss_headlines)} כותרות RSS + {len(fmp_headlines)} כותרות FMP")
+    return total
 
 
 # ── Main entry ─────────────────────────────────────────────────────────────────
@@ -261,7 +323,7 @@ def collect_all_market_data() -> dict:
     print("  🏢 מניות חברות (FMP + yfinance)...")
     companies = fetch_companies(fmp_key)
 
-    print("  📰 כותרות חדשות (FMP News)...")
+    print("  📰 מקורות מודיעין וחדשות (RSS + FMP)...")
     headlines = fetch_headlines()
 
     return {
