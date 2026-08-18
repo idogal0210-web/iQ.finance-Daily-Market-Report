@@ -37,7 +37,7 @@ def main():
     # 2. Generate Gemini analysis
     print("\n[2/4] 🤖 מייצר ניתוח עם Gemini AI...")
     analysis = generate_report(
-        api_key=os.environ["GEMINI_API_KEY"],
+        api_key=os.environ.get("GEMINI_API_KEY", ""),
         market_data=market_data,
     )
 

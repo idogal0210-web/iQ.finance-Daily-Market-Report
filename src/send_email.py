@@ -14,9 +14,13 @@ from datetime import datetime
 
 def send_report(html_content: str) -> None:
     """שולח את ה-HTML כמייל."""
-    gmail_user      = os.environ["GMAIL_USER"]
-    gmail_password  = os.environ["GMAIL_APP_PASSWORD"]
-    recipient       = os.environ["RECIPIENT_EMAIL"]
+    gmail_user      = os.environ.get("GMAIL_USER")
+    gmail_password  = os.environ.get("GMAIL_APP_PASSWORD")
+    recipient       = os.environ.get("RECIPIENT_EMAIL")
+
+    if not gmail_user or not gmail_password or not recipient:
+        print("  ⚠️ [WARN] פרטי שליחת מייל (GMAIL_USER / GMAIL_APP_PASSWORD / RECIPIENT_EMAIL) לא הוגדרו — מדלג על שליחת המייל.")
+        return
 
     today = datetime.now().strftime("%d/%m/%Y")
     subject = f"📊 דו״ח שוק וסחורות — {today}"
