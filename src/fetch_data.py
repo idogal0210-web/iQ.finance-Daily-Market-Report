@@ -25,6 +25,12 @@ COMMODITIES_META = {
     "potash":  {"ticker_yf": "ICL",   "label": "ICL (אשלגן proxy)",      "unit": "$",        "sector": "agri"},
 }
 
+MACRO_META = {
+    "us10y":  {"ticker_fmp": None, "ticker_yf": "^TNX",     "label": "אג\"ח ארה\"ב 10Y",        "unit": "%",   "sector": "bonds"},
+    "vix":    {"ticker_fmp": None, "ticker_yf": "^VIX",     "label": "מדד התנודתיות (VIX)",     "unit": "נק'", "sector": "volatility"},
+    "dxy":    {"ticker_fmp": None, "ticker_yf": "DX-Y.NYB", "label": "מדד הדולר (DXY)",         "unit": "נק'", "sector": "currencies"},
+}
+
 INDICES_META = {
     "sp500":  {"ticker_fmp": "^GSPC",  "ticker_yf": "^GSPC",  "label": "S&P 500",   "country": "us"},
     "nasdaq": {"ticker_fmp": "^IXIC",  "ticker_yf": "^IXIC",  "label": 'נאסד"ק',    "country": "us"},
@@ -204,6 +210,17 @@ def fetch_companies(fmp_key: str) -> dict:
     return out
 
 
+def fetch_macro() -> dict:
+    out = {}
+    for key, meta in MACRO_META.items():
+        data = _fetch_yf(meta["ticker_yf"])
+        if data:
+            out[key] = {**meta, **data}
+        else:
+            out[key] = _empty_record(meta)
+    return out
+
+
 def fetch_headlines(max_articles: int = 12) -> list[str]:
     """Fetch headlines from Financial Modeling Prep (FMP) news API."""
     fmp_key = os.environ.get("FMP_API_KEY", "")
@@ -235,6 +252,9 @@ def collect_all_market_data() -> dict:
     print("  📈 מדדים (FMP + yfinance)...")
     indices = fetch_indices(fmp_key)
 
+    print("  🏛️ נתוני מאקרו ואג״ח (yfinance)...")
+    macro = fetch_macro()
+
     print("  ⛽ סחורות (yfinance)...")
     commodities = fetch_commodities()
 
@@ -248,6 +268,7 @@ def collect_all_market_data() -> dict:
         "date":        datetime.now().strftime("%d/%m/%Y"),
         "date_en":     datetime.now().strftime("%Y-%m-%d"),
         "indices":     indices,
+        "macro":       macro,
         "commodities": commodities,
         "companies":   companies,
         "headlines":   headlines,
