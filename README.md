@@ -1,6 +1,6 @@
 # 📊 iQ.finance — Daily Market Report
 
-מערכת אוטומטית שמייצרת ושולחת דוח שוק וסחורות יומי לכתובת מייל, כל יום ב-07:00 שעון ישראל.
+מערכת אוטומטית שמייצרת ושולחת דוח שוק, מט״ח וסחורות יומי לכתובת מייל, כל יום ב-07:00 שעון ישראל.
 
 ---
 
@@ -12,11 +12,13 @@ daily-market-report/
 │   └── workflows/
 │       └── daily_report.yml   ← GitHub Actions (cron יומי)
 ├── src/
-│   ├── fetch_data.py          ← yfinance + NewsAPI + Gemini AI
+│   ├── fetch_data.py          ← FMP API + yfinance (עם חישוב 52wk/MA50/מט"ח) + FMP News
+│   ├── generate_analysis.py   ← Gemini AI (עם מנגנון Safety Settings ו-Fallbacks)
 │   ├── build_report.py        ← HTML generator
 │   └── send_email.py          ← Gmail SMTP sender
 ├── main.py                    ← נקודת כניסה
 ├── requirements.txt
+├── .gitignore
 └── README.md
 ```
 
@@ -32,7 +34,8 @@ daily-market-report/
 | `GMAIL_APP_PASSWORD` | ראה הוראות למטה |
 | `RECIPIENT_EMAIL` | המייל שיקבל את הדוח |
 | `GEMINI_API_KEY` | [Google AI Studio](https://aistudio.google.com/app/apikey) — חינמי |
-| `NEWS_API_KEY` | [newsapi.org](https://newsapi.org/register) — Developer plan חינמי |
+| `FMP_API_KEY` | [Financial Modeling Prep](https://site.financialmodelingprep.com/developer/docs/) — מפתח חינמי לנתוני שוק וחדשות |
+| `NEWS_API_KEY` | (אופציונלי) למעקב כותרות חלופי |
 
 ---
 
@@ -50,22 +53,16 @@ daily-market-report/
 
 ## 🚀 הפעלה ראשונה
 
-### 1. צור GitHub Repository חדש
-```bash
-git init
-git remote add origin https://github.com/YOUR_USERNAME/daily-market-report.git
-```
-
-### 2. דחוף את הקוד
+### 1. דחוף את הקוד
 ```bash
 git add .
-git commit -m "feat: initial daily market report system"
-git push -u origin main
+git commit -m "feat: updated daily market report system"
+git push origin main
 ```
 
-### 3. הגדר את ה-Secrets (ראה למעלה)
+### 2. הגדר את ה-Secrets (ראה למעלה)
 
-### 4. הרץ ידנית לבדיקה
+### 3. הרץ ידנית לבדיקה
 ```
 GitHub repo → Actions → Daily Market Report → Run workflow
 ```
@@ -79,19 +76,18 @@ GitHub repo → Actions → Daily Market Report → Run workflow
 | **קיץ (UTC+3)** | `0 4 * * *` | 07:00 |
 | **חורף (UTC+2)** | `0 5 * * *` | 07:00 |
 
-כרגע מוגדר ל-**קיץ** (`0 4 * * *`).  
 לשינוי — ערוך את `.github/workflows/daily_report.yml` בשורת `cron:`.
 
 ---
 
-## 📦 סחורות שנאספות
+## 📦 נתונים ונכסים שנאספים
 
-| סחורה | מקור |
-|--------|------|
-| WTI Crude, Brent, Natural Gas | yfinance (futures) |
-| Gold, Nickel | yfinance (futures) |
-| Wheat | yfinance (futures) |
-| ICL Group (Potash proxy) | yfinance (מניה) |
+| קטגוריה | מקור | פרטים |
+|--------|------|-------|
+| **מדדים ומט״ח** | yfinance / FMP | S&P 500, נאסד"ק, דאו ג'ונס, ת"א-125, דולר/שקל (`USDILS=X`) |
+| **סחורות** | yfinance | WTI Crude, Brent, Natural Gas, Gold, Copper, Wheat, ICL |
+| **חברות בפוקוס** | FMP / yfinance | Nvidia, Lockheed Martin, Delta Air Lines, Vistra, Frontline, Diamondback, Freeport, Southern Copper, אלביט מערכות, ICL |
+| **חדשות שוק** | FMP Stock News | כותרות וניתוח אקטואלי בזמן אמת |
 
 ---
 
@@ -99,8 +95,8 @@ GitHub repo → Actions → Daily Market Report → Run workflow
 
 | שירות | מגבלה חינמית |
 |--------|--------------|
-| **yfinance** | ללא מגבלה (נתוני Yahoo Finance) |
-| **NewsAPI** | 100 בקשות/יום, חדשות עד 30 יום אחורה |
+| **yfinance** | ללא מגבלה (נתוני Yahoo Finance + חישוב היסטורי) |
+| **FMP API** | 250 בקשות/יום במנגנון החינמי |
 | **Gemini AI** | 60 req/min, 1,500 req/day |
 | **GitHub Actions** | 2,000 דקות/חודש (Ubuntu) |
 | **Gmail SMTP** | 500 מיילים/יום |
@@ -109,4 +105,5 @@ GitHub repo → Actions → Daily Market Report → Run workflow
 
 ## ⚖️ כתב ויתור
 
-הדוח מיועד למטרות לימוד ומידע בלבד ואינו מהווה ייעוץ השקעות.
+הדו״ח מיועד למטרות לימוד ומידע בלבד ואינו מהווה ייעוץ השקעות.
+
