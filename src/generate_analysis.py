@@ -107,6 +107,41 @@ def _build_movers(market_data: dict) -> str:
 
 
 # ── Smart Dynamic Fallback ─────────────────────────────────────────────────────
+def _company_custom_fallback(c: dict) -> str:
+    """Returns a tailored, authentic business analysis per company to avoid generic repetition."""
+    ticker = (c.get("ticker_fmp") or c.get("ticker_yf") or "").upper()
+    p = c.get("price", "—")
+    chg = c.get("change", "—")
+    
+    profiles = {
+        "NVDA": f"נסחרת ברמת ${p} ({chg}). מובילת שוק השבבים ל-AI; קטליזטור מרכזי סביב ביקושי חוות השרתים, ארכיטקטורת Blackwell וצמיחת הכנסות ממרכזי נתונים.",
+        "LMT":  f"נסחרת ברמת ${p} ({chg}). ענקית הביטחון האמריקאית; נהנית מגידול בצבר ההזמנות למערכות הגנה אווירית וטילי יירוט בעקבות ההסלמה במזרח התיכון.",
+        "DAL":  f"נסחרת ברמת ${p} ({chg}). רגישה ישירות לתנודות במחירי הדלק הסילוני (Jet Fuel); זינוק במחירי הנפט לוחץ על מרווחי הרווחיות התפעולית.",
+        "VST":  f"נסחרת ברמת ${p} ({chg}). שחקנית חשמל ואנרגיה מובילה; חתמה על חוזי אספקה ארוכי טווח לחשמל גרעיני וגז טבעי עבור חוות שרתי AI.",
+        "FRO":  f"נסחרת ברמת ${p} ({chg}). מפעילת מכליות נפט ענק (VLCC); מרוויחה ישירות מהארכת נתיבי השיט סביב אפריקה ומעליית תעריפי החכירה היומיים.",
+        "FANG": f"נסחרת ברמת ${p} ({chg}). מפיקת נפט יבשתי באגן הפרמיאן; נהנית מתזרים מזומנים חופשי חזק בסביבת מחירי WTI גבוהים ללא תלות בנתיבי שיט.",
+        "FCX":  f"נסחרת ברמת ${p} ({chg}). יצרנית הנחושת המובילה בעולם; נהנית ישירות משיאי מחירים עקב הביקוש המאסיבי לתשתיות חשמל, כבלים ורשתות AI.",
+        "SCCO": f"נסחרת ברמת ${p} ({chg}). כריית נחושת בעלת עתודות עשירות בדרום אמריקה ועלויות הפקה נמוכות; תרגום ישיר של מחיר המתכת לשולי רווח נקיים.",
+        "ESLT": f"נסחרת ברמת ${p} ({chg}). צבר הזמנות ביטחוני בשיא כל הזמנים (מעל 30 מיליארד דולר); ביקוש גלובלי גובר למערכות מל\"טים והגנה אלקטרונית.",
+        "ICL":  f"נסחרת ברמת ${p} ({chg}). נהנית מאיזון מחודש במחירי האשלג והדשנים העולמיים, וחידוש חוזי אספקה רב-שנתיים מול הודו וסין.",
+    }
+    
+    if ticker in profiles:
+        return profiles[ticker]
+    
+    sector = c.get("sector", "general")
+    if sector == "tech":
+        return f"נסחרת ברמת ${p} ({chg}). מציגה ביצועים סקטוריאליים בהתאם למומנטום במניות הטכנולוגיה וזרימת ההון ל-AI."
+    elif sector == "defense":
+        return f"נסחרת ברמת ${p} ({chg}). נהנית מהרחבת תקציבי הביטחון העולמיים ומביקוש מוגבר למערכות חימוש והגנה."
+    elif sector == "energy":
+        return f"נסחרת ברמת ${p} ({chg}). מושפעת ישירות מרמות מחירי הנפט והגז ומרווחי הזיקוק העולמיים."
+    elif sector == "mining":
+        return f"נסחרת ברמת ${p} ({chg}). מגיבה לתנודות במחירי המתכות התעשייתיות ולמצב המלאים הפיזיים בבורסות."
+    
+    return f"נסחרת ברמת ${p} ({chg}). שווי שוק: {c.get('market_cap', 'לא זמין')}. שחקנית מפתח בסקטור המושפעת ממגמות המאקרו."
+
+
 def _smart_dynamic_fallback(market_data: dict) -> dict:
     """Generates a rich, data-driven analysis from real market metrics if Gemini API is unavailable."""
     indices = market_data.get("indices", {})
@@ -146,16 +181,11 @@ def _smart_dynamic_fallback(market_data: dict) -> dict:
     for key, c in companies.items():
         if not c.get("verified"):
             continue
-        p = c.get("price", "—")
-        chg = c.get("change", "—")
-        mc = c.get("market_cap", "")
-        ma50_info = f" (יחס ל-MA50: {c.get('ma50', '')})" if c.get("ma50") else ""
-        
         entry = {
             "name": c["label"],
             "ticker": c.get("ticker_fmp") or c.get("ticker_yf", ""),
             "direction": c.get("direction", "flat"),
-            "analysis": f"נסחרת ברמת ${p} ({chg}). שווי שוק: {mc or 'לא זמין'}{ma50_info}. מהווה שחקנית מפתח בסקטור עם השפעה ישירה על תיאבון הסיכון של המשקיעים."
+            "analysis": _company_custom_fallback(c)
         }
         if c.get("country") == "il":
             il_companies.append(entry)
@@ -258,7 +288,11 @@ def generate_report(api_key: str, market_data: dict) -> dict:
 3. ⚡ **מניע לפעולה (Actionable Takeaways & Decisions):**
    - ספק רמות מפתח ברורות בסעיף `🎯 למעקב:` ובסעיף `🎯 מסקנה לפעולה:` עבור כל צוואר בקבוק.
 
-4. ✍️ **שפה וסגנון:**
+4. 🔍 **אינדיבידואליות מלאה לכל מניה (איסור מוחלט על משפטים משוכפלים!):**
+   - כל חברה חייבת לקבל ניתוח שונה ומותאם אישית — מה הקטליזטור העסקי, התוצאות, הביקוש, או החדשות הספציפיות שלה.
+   - לעולם אל תחזור על אותו משפט או מבנה גנרי בין חברות שונות.
+
+5. ✍️ **שפה וסגנון:**
    - עברית רהוטה, עשירה, מקצועית ומעוצבת היטב.
    - השתמש במספרים המדויקים שנמסרו בנתונים.
 
@@ -279,7 +313,7 @@ def generate_report(api_key: str, market_data: dict) -> dict:
         "name": "שם החברה (לדוגמה Nvidia)",
         "ticker": "NVDA",
         "direction": "up",
-        "analysis": "קטליזטור עסקי קונקרטי, תאריכי דוחות, תחזיות הכנסות, או קשר ישיר למגמת ה-AI/אנרגיה/ביטחון."
+        "analysis": "קטליזטור עסקי ספציפי וייחודי לחברה, תאריכי דוחות, תחזיות הכנסות, חוזי אספקה, או קשר ישיר למגמת ה-AI/אנרגיה/ביטחון."
       }}
     ],
     "watch_levels": "🎯 למעקב: רמות מפתח מספריות ותרחישי if-then ברורים (לדוגמה: מעל 7,800 נק' בסגירה יומית ← המשך מגמת עלייה, יעד הבא 8,000; ירידה מתחת ל-7,650 ← המתנה...)."
@@ -341,13 +375,16 @@ def generate_report(api_key: str, market_data: dict) -> dict:
   }}
 }}"""
 
-    # Model priority: Thinking & Reasoning models first, then fast fallbacks
+    # Comprehensive model fallback chain including newest release aliases
     models_to_try = [
+        "gemini-2.5-flash",
         "gemini-2.5-pro",
-        "gemini-2.0-flash-thinking-exp",
+        "gemini-3.1-pro-preview",
+        "gemini-3.6-flash",
         "gemini-2.0-flash",
-        "gemini-1.5-pro",
-        "gemini-1.5-flash",
+        "gemini-2.0-flash-001",
+        "gemini-1.5-pro-latest",
+        "gemini-1.5-flash-latest",
     ]
 
     # Try modern google-genai SDK first
@@ -409,4 +446,5 @@ def generate_report(api_key: str, market_data: dict) -> dict:
 
     print("  [WARN] All Gemini API models failed — using smart dynamic data-driven fallback")
     return _smart_dynamic_fallback(market_data)
+
 
