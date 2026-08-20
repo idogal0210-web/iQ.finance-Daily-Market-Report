@@ -37,6 +37,33 @@ def _clean_json_text(text: str) -> str:
     return text
 
 
+def _parse_llm_json(raw_text: str) -> dict | None:
+    """Robust JSON parser that handles minor formatting irregularities from LLMs."""
+    cleaned = _clean_json_text(raw_text)
+    try:
+        return json.loads(cleaned)
+    except Exception:
+        pass
+
+    # Fix trailing commas before } or ]
+    fixed = re.sub(r",\s*([\]}])", r"\1", cleaned)
+    try:
+        return json.loads(fixed)
+    except Exception:
+        pass
+
+    # Fix unescaped newlines inside string literals
+    try:
+        # Clean control characters
+        sanitized = re.sub(r"[\x00-\x1f\x7f-\x9f]", lambda m: " " if m.group(0) in ("\n", "\r", "\t") else "", fixed)
+        return json.loads(sanitized)
+    except Exception:
+        pass
+
+    return None
+
+
+
 # ── Context builders ───────────────────────────────────────────────────────────
 def _rich_company_line(v: dict) -> str:
     """Builds a rich single-line summary of a company for the prompt."""
@@ -375,16 +402,10 @@ def generate_report(api_key: str, market_data: dict) -> dict:
   }}
 }}"""
 
-    # Comprehensive model fallback chain including newest release aliases
+    # Comprehensive model fallback chain prioritized by active models
     models_to_try = [
-        "gemini-2.5-flash",
-        "gemini-2.5-pro",
-        "gemini-3.1-pro-preview",
         "gemini-3.6-flash",
-        "gemini-2.0-flash",
-        "gemini-2.0-flash-001",
-        "gemini-1.5-pro-latest",
-        "gemini-1.5-flash-latest",
+        "gemini-3.1-pro-preview",
     ]
 
     # Try modern google-genai SDK first
@@ -395,7 +416,7 @@ def generate_report(api_key: str, market_data: dict) -> dict:
                 try:
                     print(f"  🤖 מנסה להפיק ניתוח עם {model_name} (google-genai SDK)...")
                     config = types.GenerateContentConfig(
-                        temperature=0.3,
+                        temperature=0.2,
                         response_mime_type="application/json",
                     )
                     response = client.models.generate_content(
@@ -404,10 +425,12 @@ def generate_report(api_key: str, market_data: dict) -> dict:
                         config=config,
                     )
                     if response and hasattr(response, "text") and response.text:
-                        cleaned = _clean_json_text(response.text)
-                        data = json.loads(cleaned)
-                        print(f"  ✅ ניתוח איכותי הופק בהצלחה מ-{model_name}!")
-                        return data
+                        data = _parse_llm_json(response.text)
+                        if data and isinstance(data, dict) and data.get("tldr"):
+                            print(f"  ✅ ניתוח איכותי הופק בהצלחה מ-{model_name}!")
+                            return data
+                        else:
+                            print(f"  [WARN] {model_name} JSON parsing failed or incomplete")
                 except Exception as m_err:
                     print(f"  [WARN] {model_name} שגיאה: {m_err}")
         except Exception as sdk_err:
@@ -429,7 +452,7 @@ def generate_report(api_key: str, market_data: dict) -> dict:
                 model = legacy_genai.GenerativeModel(
                     model_name,
                     generation_config={
-                        "temperature": 0.3,
+                        "temperature": 0.2,
                         "response_mime_type": "application/json",
                         "max_output_tokens": 8192,
                     },
@@ -437,10 +460,12 @@ def generate_report(api_key: str, market_data: dict) -> dict:
                 )
                 response = model.generate_content(prompt)
                 if response and hasattr(response, "text") and response.text:
-                    cleaned = _clean_json_text(response.text)
-                    data = json.loads(cleaned)
-                    print(f"  ✅ ניתוח איכותי הופק בהצלחה מ-{model_name} (Legacy SDK)!")
-                    return data
+                    data = _parse_llm_json(response.text)
+                    if data and isinstance(data, dict) and data.get("tldr"):
+                        print(f"  ✅ ניתוח איכותי הופק בהצלחה מ-{model_name} (Legacy SDK)!")
+                        return data
+                    else:
+                        print(f"  [WARN] {model_name} (Legacy) JSON parsing failed")
             except Exception as leg_err:
                 print(f"  [WARN] {model_name} (Legacy) שגיאה: {leg_err}")
 
