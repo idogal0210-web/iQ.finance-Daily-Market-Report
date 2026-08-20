@@ -136,8 +136,69 @@ def _subsection_header(flag: str, title: str) -> str:
 </table>"""
 
 
+# ── Company Card with Recommendation Badge ─────────────────────────────────────
+def _render_company_card(c: dict) -> str:
+    d = c.get("direction", "flat")
+    border_color = C["green"] if d == "up" else (C["red"] if d == "down" else C["muted"])
+    emoji = "🔹" if d in ("up", "flat") else "🔻"
+    name   = c.get("name", "")
+    ticker = c.get("ticker", "")
+    rec    = c.get("recommendation") or c.get("stance", "")
+    body   = c.get("analysis") or c.get("catalyst_and_analysis", "")
+    
+    rec_badge = ""
+    if rec:
+        if any(w in rec for w in ("קנייה", "איסוף", "🟢", "חיובי")):
+            rec_badge = f' <span style="display:inline-block;background:#1e3825;color:#4ade80;border:1px solid #2d6a3f;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:bold;margin:0 4px;{FONT}">{rec}</span>'
+        elif any(w in rec for w in ("מעקב", "המתנה", "🟡", "ניטרלי")):
+            rec_badge = f' <span style="display:inline-block;background:#3b3218;color:#facc15;border:1px solid #715b18;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:bold;margin:0 4px;{FONT}">{rec}</span>'
+        elif any(w in rec for w in ("זהירות", "מימוש", "🔴", "שלילי")):
+            rec_badge = f' <span style="display:inline-block;background:#3b1e1e;color:#f87171;border:1px solid #712828;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:bold;margin:0 4px;{FONT}">{rec}</span>'
+        else:
+            rec_badge = f' <span style="display:inline-block;background:#2a2a28;color:#d1d5db;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:bold;margin:0 4px;{FONT}">{rec}</span>'
+
+    return (
+        f'<div style="margin:0 0 9px;font-size:13.5px;color:{C["text"]};'
+        f'line-height:1.6;padding-right:10px;border-right:3px solid {border_color}40;{FONT}">'
+        f'{emoji} <strong style="color:{C["text"]};">{name}</strong>'
+        f' <span style="color:{C["muted"]};font-size:12px;font-weight:normal;">{ticker}</span>'
+        f'{rec_badge}'
+        f' — {body}</div>'
+    )
+
+
+def _render_companies_by_sector(companies: list, sectors: list = None) -> str:
+    if sectors and isinstance(sectors, list):
+        out = ""
+        for sec in sectors:
+            s_name = sec.get("sector_name", "")
+            s_cos = sec.get("companies", [])
+            if not s_cos:
+                continue
+            out += f'<p style="margin:12px 0 6px;color:{C["accent"]};font-size:12.5px;font-weight:bold;{FONT}">📂 {s_name}</p>'
+            for c in s_cos:
+                out += _render_company_card(c)
+        return out
+
+    if companies:
+        grouped = {}
+        for c in companies:
+            sec = c.get("sector") or "חברות בפוקוס"
+            grouped.setdefault(sec, []).append(c)
+
+        out = ""
+        for sec_name, c_list in grouped.items():
+            if len(grouped) > 1 or sec_name != "חברות בפוקוס":
+                out += f'<p style="margin:12px 0 6px;color:{C["accent"]};font-size:12.5px;font-weight:bold;{FONT}">📂 {sec_name}</p>'
+            for c in c_list:
+                out += _render_company_card(c)
+        return out
+
+    return ""
+
+
 # ── Market section (US or IL) ─────────────────────────────────────────────────
-def _market_section(macro: str, insight: str, companies: list, watch: str) -> str:
+def _market_section(macro: str, insight: str, companies: list, watch: str, sectors: list = None) -> str:
     # Macro paragraph
     macro_html = f"""
 <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:{C['bg']};">
@@ -149,32 +210,18 @@ def _market_section(macro: str, insight: str, companies: list, watch: str) -> st
   </tr>
 </table>"""
 
-    # Company cards
+    # Company cards grouped by sector
+    co_content = _render_companies_by_sector(companies, sectors)
     co_html = ""
-    if companies:
-        cards = ""
-        for c in companies:
-            d = c.get("direction", "flat")
-            border_color = C["green"] if d == "up" else (C["red"] if d == "down" else C["muted"])
-            emoji = "🔹" if d in ("up", "flat") else "🔻"
-            name   = c.get("name", "")
-            ticker = c.get("ticker", "")
-            body   = c.get("analysis") or c.get("catalyst_and_analysis", "")
-            cards += (
-                f'<p style="margin:0 0 9px;font-size:13.5px;color:{C["text"]};'
-                f'line-height:1.6;padding-right:10px;border-right:3px solid {border_color}40;{FONT}">'
-                f'{emoji} <strong style="color:{C["text"]};">{name}</strong>'
-                f' <span style="color:{C["muted"]};font-size:12px;font-weight:normal;">{ticker}</span>'
-                f' — {body}</p>'
-            )
+    if co_content:
         co_html = f"""
 <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:{C['bg']};">
   <tr>
     <td dir="rtl" style="padding:4px 22px 4px;">
-      <p style="margin:0 0 8px;color:{C['muted']};font-size:12px;font-weight:bold;{FONT}">
-        חברות בפוקוס:
+      <p style="margin:0 0 4px;color:{C['muted']};font-size:12px;font-weight:bold;{FONT}">
+        חברות בפוקוס — לפי סקטורים:
       </p>
-      {cards}
+      {co_content}
     </td>
   </tr>
 </table>"""
@@ -380,6 +427,7 @@ def build_html(analysis: dict, market_data: dict) -> str:
             us.get("insight", ""),
             us.get("companies", []),
             us.get("watch_levels", ""),
+            us.get("sectors"),
         ),
         _subsection_header("🇮🇱", "השוק הישראלי"),
         _market_section(
@@ -387,6 +435,7 @@ def build_html(analysis: dict, market_data: dict) -> str:
             il.get("insight", ""),
             il.get("companies", []),
             il.get("watch_levels", ""),
+            il.get("sectors"),
         ),
         _spacer(6),
 

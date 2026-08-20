@@ -40,16 +40,25 @@ INDICES_META = {
 }
 
 COMPANIES_META = {
-    "nvda":  {"ticker_fmp": "NVDA",  "ticker_yf": "NVDA",  "label": "Nvidia",            "sector": "tech",     "country": "us"},
-    "lmt":   {"ticker_fmp": "LMT",   "ticker_yf": "LMT",   "label": "Lockheed Martin",   "sector": "defense",  "country": "us"},
-    "dal":   {"ticker_fmp": "DAL",   "ticker_yf": "DAL",   "label": "Delta Air Lines",   "sector": "airlines", "country": "us"},
-    "vst":   {"ticker_fmp": None,    "ticker_yf": "VST",   "label": "Vistra",            "sector": "energy",   "country": "us"},
-    "fro":   {"ticker_fmp": None,    "ticker_yf": "FRO",   "label": "Frontline",         "sector": "tankers",  "country": "us"},
-    "fang":  {"ticker_fmp": None,    "ticker_yf": "FANG",  "label": "Diamondback Energy","sector": "energy",   "country": "us"},
-    "fcx":   {"ticker_fmp": None,    "ticker_yf": "FCX",   "label": "Freeport-McMoRan",  "sector": "mining",   "country": "us"},
-    "scco":  {"ticker_fmp": None,    "ticker_yf": "SCCO",  "label": "Southern Copper",   "sector": "mining",   "country": "us"},
-    "eslt":  {"ticker_fmp": None,    "ticker_yf": "ESLT",  "label": "אלביט מערכות",     "sector": "defense",  "country": "il"},
-    "icl":   {"ticker_fmp": None,    "ticker_yf": "ICL",   "label": "ICL Group",         "sector": "agri",     "country": "il"},
+    # ── US Focus ─────────────────────────────────────────────────────────────
+    "nvda":  {"ticker_fmp": "NVDA",  "ticker_yf": "NVDA",     "label": "Nvidia",            "sector": "שבבים ו-AI",            "country": "us"},
+    "vst":   {"ticker_fmp": None,    "ticker_yf": "VST",      "label": "Vistra",            "sector": "אנרגיה ותשתיות AI",     "country": "us"},
+    "lmt":   {"ticker_fmp": "LMT",   "ticker_yf": "LMT",      "label": "Lockheed Martin",   "sector": "ביטחון ותעופה",         "country": "us"},
+    "dal":   {"ticker_fmp": "DAL",   "ticker_yf": "DAL",      "label": "Delta Air Lines",   "sector": "תעופה וצרכנות",         "country": "us"},
+    "fro":   {"ticker_fmp": None,    "ticker_yf": "FRO",      "label": "Frontline",         "sector": "ספנות ושינוע נפט",      "country": "us"},
+    "fang":  {"ticker_fmp": None,    "ticker_yf": "FANG",     "label": "Diamondback Energy","sector": "נפט וגז",               "country": "us"},
+    "fcx":   {"ticker_fmp": None,    "ticker_yf": "FCX",      "label": "Freeport-McMoRan",  "sector": "מתכות וכרייה",          "country": "us"},
+    "scco":  {"ticker_fmp": None,    "ticker_yf": "SCCO",     "label": "Southern Copper",   "sector": "מתכות וכרייה",          "country": "us"},
+
+    # ── Israel Focus (Diverse High-Conviction Sectors) ────────────────────────
+    "eslt":  {"ticker_fmp": None,    "ticker_yf": "ESLT",     "label": "אלביט מערכות",      "sector": "ביטחון וסייבר",         "country": "il"},
+    "chkp":  {"ticker_fmp": "CHKP",  "ticker_yf": "CHKP",     "label": "צ'ק פוינט",         "sector": "ביטחון וסייבר",         "country": "il"},
+    "nvmi":  {"ticker_fmp": "NVMI",  "ticker_yf": "NVMI",     "label": "נובה (Nova)",       "sector": "שבבים וטכנולוגיה",      "country": "il"},
+    "lumi":  {"ticker_fmp": None,    "ticker_yf": "LUMI.TA",  "label": "בנק לאומי",         "sector": "בנקאות ופיננסים",       "country": "il"},
+    "poli":  {"ticker_fmp": None,    "ticker_yf": "POLI.TA",  "label": "בנק הפועלים",       "sector": "בנקאות ופיננסים",       "country": "il"},
+    "enlt":  {"ticker_fmp": "ENLT",  "ticker_yf": "ENLT",     "label": "אנלייט אנרגיה",     "sector": "אנרגיה מתחדשת",         "country": "il"},
+    "azrg":  {"ticker_fmp": None,    "ticker_yf": "AZRG.TA",  "label": "קבוצת עזריאלי",     "sector": "נדל״ן ותשתיות",         "country": "il"},
+    "icl":   {"ticker_fmp": None,    "ticker_yf": "ICL",      "label": "ICL Group",         "sector": "דשנים וסחורות",         "country": "il"},
 }
 
 
