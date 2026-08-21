@@ -2,10 +2,13 @@ name: Daily Market Report
 
 on:
   schedule:
-    # 05:00 UTC = 07:00 שעון ישראל (קיץ, UTC+2)
-    # בחורף (UTC+2): שנה ל- "0 5 * * *"
-    - cron: "0 5 * * *"
+    # 04:30 UTC = 07:30 שעון קיץ בישראל (UTC+3) / 06:30 שעון חורף
+    - cron: "30 4 * * *"
   workflow_dispatch:   # מאפשר הרצה ידנית מה-UI של GitHub
+
+concurrency:
+  group: daily-market-report
+  cancel-in-progress: true
 
 jobs:
   send-report:
